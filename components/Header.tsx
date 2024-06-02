@@ -18,6 +18,7 @@ const Header = () => {
     let iterations = 0;
 
     const animateText = () => {
+      if (textElement === null) return;
       if (iterations < finalText.length) {
         let currentText = '';
         for (let i = 0; i < finalText.length; i++) {
