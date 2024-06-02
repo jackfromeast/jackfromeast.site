@@ -1,0 +1,100 @@
+---
+title: "网络协议Fuzz框架：Boofuzz"
+date: "2021-03-20"
+tags: ['Fuzz']
+draft: false
+summary: "简介: 本篇文章将对`BooFuzz`网络协议模糊测试框架进行详细分析，并对其中的细节进行关键代码解读，最终将对一个包含漏洞的IoT固件中的boa服务器进行FUZZ作为演示示例。"
+---
+
+简介:
+本篇文章将对`BooFuzz`网络协议模糊测试框架进行详细分析，并对其中的细节进行关键代码解读，最终将对一个包含漏洞的IoT固件中的boa服务器进行FUZZ作为演示示例。
+
+
+
+## 什么是BooFuzz？
+`boofuzz`是一个开源的由Python编写的网络协议模糊测试框架，继承自[Sulley](https://github.com/OpenRCE/sulley). 作为一个框架，`boofuzz`提供了对于网络协议进行模糊测试的规范和功能函数。以此作为基础，你可以很自如地编写针对自己的目标的Python脚本，对该目标进行量身定制的Fuzz。
+
+为了更好的理解什么是框架，我可以做这样的一个比喻：当你想要为自己的女朋友亲手制作一块生日蛋糕时，你需要到蛋糕坊。因为那里提供了制作一块蛋糕的相关知识和基本流程，丰富的食材以及趁手的工具。你需要做的就是在他们的指导下，顺着基本的流程，自己选择食材和工具，然后根据自己的想法或者女朋友的喜好制作一块精心设计的生日蛋糕。当然你也可以选择去蛋糕店，把自己的需求和喜好都告诉店员，得到一份蛋糕的成品。或许从这个例子中，可以更好的理解软件和框架的区别。
+
+
+## 开始Fuzz之前你需要了解的
+所有的Fuzz都是有针对的对象的，换句话说，我们先要确定对哪个程序进行Fuzz。一般来说，我们在使用通用模糊测试器如AFL的时候，我们是对一个程序或者由程序组成的软件进行Fuzz，他们从文件中读取模糊测试的输入，然后观察程序的执行情况。但是如果你想对一个使用特定协议进行交互的服务器或者客户端进行模糊测试时，AFL这类通用的灰盒模糊测试器就不那么好用了，因为这类程序是通过Socket获取输入而非文件或命令行。对于这类对象的模糊测试，Boofuzz很可能就是你想要了解的。
+
+我们了解到，当想要对服务器程序或者客户端程序进行Fuzz的时候，就很可能需要使用到BooFuzz。但是需要注意的是，BooFuzz并不是直接对服务器程序或者客户端程序进行Fuzz的！为了更好的模拟服务器或者客户端在真实情境中的工作状态，该模糊测试的对象是会话(Session)！以TCP为基础的有状态的协议为例，如HTTP,FTP,SSH等，就是一次TCP连接。其中可能包括若干次Resquest和Response交互。看完[Quickstart](https://boofuzz.readthedocs.io/en/stable/user/quickstart.html)中的几段代码，我相信你肯定会更好地什么是会话(Session)了.
+
+在了解Fuzz的对象之后，我们再来粗糙地想想看:要完成一次模糊测试需要哪些模块的作用。以测试服务器为例，首先，需要定义交互协议的规范, 也就是我们需要手动定义每次发包时候的固定内容和格式。然后需要变异模块，在规定的格式的基础上，对可变部分进行变异。此外，当我们精心制作的TestCase送达服务器端进行处理，我们仍需要监控模块对服务器程序或者网络连接状况进行监控，这样我们就可以捕捉程序有没有崩溃。我们可能还需要回调函数来查看和处理每次服务器返回的Response，需要可视化模块来帮助用户查看测试的进度等。在boofuzz框架的帮助下，种子变异模块，可视化模块对于我们而言都是透明的。监控模块也只需要提供被监控的进程名等或者IP端口号等基本信息即可。我们需要做的是专注于会话过程，构造交互流程以及每次Resquest的基本内容和格式。
+
+## 开始Fuzz！
+
+我们要准备的内容包括以下三个部分：
+
++ 充当客户端的Fuzz脚本
+
++ 监控targeted server的Moniter程序
+
++ 跑起来目标服务器
+
+首先，我们知道Boofuzz是针对Session进行模糊测试的，所以我们首先定义一个Session对象。其中参数包括我们的TCP连接、每一次fuzz的时间间隔以及每一次fuzz日志输出。
+```
+    fuzz_log_file = open('boofuzz-results/vivotek_boa_http_httpd_fuzzlog.csv', 'w')
+
+    session = Session(
+        target=Target(connection=TCPSocketConnection(target_ip, target_port), monitors=[procmon]),
+        sleep_time=0.5,
+        fuzz_loggers=[FuzzLoggerText(), FuzzLoggerCsv(file_handle=fuzz_log_file)]
+    )
+```
+
+然后定义我们的要发的Resquest包中的格式和固定内容。
+
+我们的请求包的构成分为三个单位：包(Message)、块(Block)以及原语(Primitives)。通过以下示例可以看到一个仅包含一个Block的Message的构造。
+```
+    s_initialize(name="Request") # s_initialize函数初始化一个命名为Request的块请求，并将之后所有定义的blocks和primitives添加到此块请求上
+
+    with s_block("Request-Line"):
+        s_group("Method", ["POST"])
+        s_delim(" ", name="space-1")
+        s_string("/cgi-bin/admin/upgrade.cgi", name="Request-URI", fuzzable=False)
+        s_delim(" ", name="space-2")
+        s_string("HTTP/1.0", name="HTTP-Version", fuzzable=False)
+        s_static("\n", name="Request-Line-CRLF")
+        s_static("Content-Length:", name="Content-Length-Header")
+        s_string("", name="Content-Length-Value")
+        s_static("\r\n", "Content-Length-CRLF")
+    s_static("\r\n", "Request-CRLF")
+```
+
+接下来，将我们构造的请求包加入我们的会话图(Session)中，作为唯一的一个节点(Node).
+```
+session.connect(s_get("Request"))
+```
+
+如果你想找到Crash的话，不要忘记重要的Moniter模块。因为只有监控到Web服务器在接受TestCase之后的状态的变化才可以捕捉到Crash。Moniter模块显然是需要跑在服务器端的，我们以上做的工作只是定义了作为客户端的部分。
+
+那么Fuzz的客户端是如何和Moniter部分交互的呢？他们都运行在两个不同的地方，很可能是在本地的两个虚拟机上或者分别跑在本地和远程的服务器上。答案是通过RPC协议。看看以下的例子。通过target_ip和procmon_port端口我们可以连接到运行在服务器端的Moniter，然后通过set_options函数将我们想告诉对方的内容传递过去。
+```
+    # 进程监控Moniter
+    procmon = ProcessMonitor(target_ip, procmon_port) 
+    procmon_options = {
+        "proc_name" : "qemu-arm",
+        "start_commands": 'echo "127.0.0.1 Network-Camera localhost" >   /proc/sys/kernel/hostname && qemu-arm -L . ./usr/sbin/httpd',
+        "cwd_path": '/home/apple/IoT_firmware_images/_CC8160-VVTK-0100d.flash.zip.extracted/_CC8160-VVTK-0100d.flash.pkg.extracted/_31.extracted/_rootfs.img.extracted/squashfs-root/'
+        }
+    procmon.set_options(**procmon_options)
+```
+
+最后就是开始Fuzz！
+```
+    session.fuzz()  
+```
+
+但是不要忘记在服务器端跑Moniter的程序哈！
+```
+(boofuzz_env) root@ubuntu:boofuzz# python3 boofuzz-master/process_monitor_unix.py
+```
+
+最后看看结果。
+
+![]("/static/images/Fuzz-your-server-with-BooFuzz/s.png")
+![]("/static/images/Fuzz-your-server-with-BooFuzz/c.png")
+

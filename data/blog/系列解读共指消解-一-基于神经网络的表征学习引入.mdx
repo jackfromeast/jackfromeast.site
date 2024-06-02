@@ -1,0 +1,210 @@
+---
+title: "系列解读共指消解(一): 基于神经网络的表征学习引入"
+date: "2022-06-03"
+tags: ['自然语言处理']
+draft: false
+summary: "简介：  本文是作者对近年来基于深度学习的实体指代消解工作的梳理与总结，共包含4个阶段以及若干篇本领域优秀的论文。第一阶段为2015年之后，由Wiseman等人开启的基于神经网络的共指消解特征表征学习的解决方案。其中包括对现工作影响非常大的由Lee等人发表的端到端共指消解模型、高阶推理以及由粗到细的筛选。"
+---
+
+
+简介：
+
+本文是作者对近年来基于深度学习的实体指代消解工作的梳理与总结，共包含4个阶段以及若干篇本领域优秀的论文。第一阶段为2015年之后，由Wiseman等人开启的基于神经网络的共指消解特征表征学习的解决方案。其中包括对现工作影响非常大的由Lee等人发表的端到端共指消解模型、高阶推理以及由粗到细的筛选。
+
+
+
+#### 0 基础概念
+
+共指消解中的常用术语：
+
++ 实体(Entity)：现实世界中客观存在的可以相互区分的事物或对象，在共指消解中的共指簇；
++ 文本跨度(Span)：文本中任意长度的连续字符串；
++ 表述(Mention)：文本中指代某一实体的文本跨度；
+
+示例如下：
+
+![0](/static/images/%E7%B3%BB%E5%88%97%E8%A7%A3%E8%AF%BB%E5%85%B1%E6%8C%87%E6%B6%88%E8%A7%A3-%E4%B8%80-%E5%9F%BA%E4%BA%8E%E7%A5%9E%E7%BB%8F%E7%BD%91%E7%BB%9C%E7%9A%84%E8%A1%A8%E5%BE%81%E5%AD%A6%E4%B9%A0%E5%BC%95%E5%85%A5/0-4396807.png)![]()
+
+#### 1 Learning anaphoricity and antecedent ranking features for coreference resolution
+
+> Wiseman et al. ACL 2015
+>
+> lua-based repo: https://github.com/swiseman/nn_coref
+>
+> Paper: https://www.aclweb.org/anthology/P15-1137
+
+
+
+#### 2 Learning global features for coreference resolution
+
+> Wiseman et al. NAACL 2016
+>
+> lua-based repo: https://github.com/swiseman/nn_coref
+>
+> Paper: https://aclanthology.org/N16-1114/
+
+
+
+#### 3 Improving coreference resolution by learning entity-level distributed representations
+
+> Clark and Manning, ACL 2016
+>
+> Paper: https://www.aclweb.org/anthology/P16-1061
+>
+> python-based interface for Standord CoreNLP tools: https://github.com/aleenaraj/Coreference_Resolution
+>
+> keras 0.2 repo: https://github.com/clarkkev/deep-coref
+
+
+
+#### 4 *End-to-end Neural Coreference Resolution* 
+
+> Lee et al., EMNLP 2017
+>
+> pytorch_repo: https://github.com/shayneobrien/coreference-resolution
+
+该工作提出的共指消解任务端到端模型，抛弃了手工提取的特征，而是基于表征学习的思想使用深度神经网络生成表述的特征向量。该工作中所采用的表述排序架构、目标函数的提出、表述及表述对的表示方式均被后续众多共指消解工作认可、沿袭和继承。
+
++ 问题建模：
+
+    该工作对于共指消解任务的建模如下所示。对于长度为$T$的文档$D$，对应着$N=T(T+1)/2$个文本跨度。共指消解的任务为对所有文本跨度$i(1 \leq i \leq N)$，对应一个先行词$y_i \in Y(i)=\{\epsilon, 1, 2, ..., i-1\}$. 其中若该文本跨度i对应着空指代$\epsilon$，则代表着该文本跨度并非为实体表述或者该实体表述之前无对应的先行词。通过文本跨度及其对应的先行词即可完成文本中的实体表述的提取以及共指簇的划分。
+
+
++ 学习目标：
+
+    为解决以上数学问题，Lee et al. 提出条件分布$P(y_1, y_2, ... y_N)$作为学习的目标。该条件概率分布对应着给出文本$D$的条件下，得到各文本跨度所对应先行词的概率。其计算公式如下所示。
+    $$
+    \begin{align}
+    P\left(y_1,y_2,\ldots,y_N\middle| D\right)&=\prod_{i=1}^{N}{P\left(y_i\middle| D\right)} \\
+    &=\prod_{i=1}^{N}\frac{exp\left(s\left(i,y_i\right)\right)}{\sum_{y^\prime\in Y_{\left(i\right)}} e x p\left(s\left(i,y^\prime\right)\right)}
+    \end{align}
+    $$
+    模型优化的损失函数也是基于条件概率而计算的。
+
+    $s(i, j)$为表述对评分函数，表示文本跨度$i$与$j$共指的可能性评分。对于任意文本跨度，对其所有候选先行词的表述对评分应用softmax函数即可直接比较该文本跨度的所有候选先行词，完成候选先行词的排序。$s(i, j)$的具体计算公式如下所示。
+    $$
+    s(i,j)=\begin{cases}
+    0,\ \ j=\ \epsilon \\
+    {\ s}_m\left(i\right)+s_m\left(j\right)+s_a\left(i,j\right),\ \ j\neq\ \epsilon
+    \end{cases}
+    $$
+    其中$s_m(\cdot)$用于指示文本跨度$i$是否为表述，$s_a(\cdot)$函数用于评价候选表述对$i$和$j$的共指评分。具体地以上两个评分函数如下所示。基于表征学习的思想，表述的判断基于文本跨度本身的表征向量$g_i$和$g_j$，而表述对的评价基于表述对的表征向量包括各文本跨度的表征向量，两文本跨度对应元素积，以及距离、文章体裁等特征嵌入。
+
+$$
+s_m\left(i\right)=w_m\cdot FFNN_m\left(g_i\right)
+$$
+
+$$
+s_a\left(i,j\right)=w_a\cdot FFNN\left(\left[g_i,g_j,g_i\circ g_j,\phi\right]\right)
+$$
+
++ 文本跨度表达
+
+    不难看出，文本跨度的表征向量在表述本身评分以及表述对共指评分中起到了至关重要的角色。作者采用以下步骤获得文本跨度的表征向量。首先，文本跨度由单个或多个分词组成，因此作者采用GloVe和Turian预训练的词嵌入向量并使用CharCNN模型捕捉分词的字符特征，将三者的输出进行拼接即可得到分词的嵌入向量。接着，作者使用BiLSTM双向长短期记忆神经网络来提取分词上下文的特征，即对于语句$S$中时间步为$t$的词，对应嵌入向量为$x_t$, 提取词$t$所在句的BiLSTM隐藏层权重即可得到融合词$t$上下文的嵌入向量$x_t^*$，如下所示。
+    $$
+    BiLSTM\left(s\right)\rightarrow hidden\ state\ h
+    $$
+
+    $$
+    x_t^\ast=\left[h_{t,1},h_{t,\ -1}\right]
+    $$
+
+    接着，为在文本跨度表征向量中体现和强化关键词(head word)的表达，作者使用注意力机制对表述中各分词给予不同的权重并求和，得到$\hat{x_i}$。其中，注意力评分$\alpha$，注意力评分函数$a$，以及最终$\hat{x_i}$的计算公式如下所示：
+    $$
+    a_t=w_\alpha\cdot FFNN_\alpha\left(x_t^\ast\right)
+    $$
+
+    $$
+    \alpha_{i,t}=\frac{exp\left(a_t\right)}{\sum_{k=START\left(i\right)}^{END\left(i\right)}exp\left(a_k\right)}
+    $$
+
+    $$
+    \widehat{x_i}=\sum_{t=START\left(i\right)}^{END\left(i\right)}\alpha_{i,t}\cdot x_t
+    $$
+
+    最终，表述的表征向量如下所示。
+    $$
+    g_i=\left[x_{START}^\ast,x_{END}^\ast,\widehat{x_i},\phi\left(i\right)\right]
+    $$
+
++ 模型训练细节
+
+    在推理细节方面，由于文本跨度的数量为$N^2$层级，表述对评分的时间复杂度为$O(N^4)$。因此，我们需要对候选表述以及表述对进行剪枝操作。作者因此规定了文本跨度的长度上限为30，在表述对评分之前通过表述评分对所有文本跨度进行排序并仅保留$\lambda T$个文本跨度作为候选表述。在计算表述对评分时，对于每个候选表述，仅计算其之前的最近的$K$候选表述作为候选先行词计算表述对评分。以上限制在保证模型效果的同时极大地减少了计算代价。
+
++ 模型评价
+
+    + Strengths
+
+        模型具有可解释性，采用head-finding attention机制来显式地表示片段中对共指决策帮助最大的分词。
+
+    + Weaknesses
+
+        1. 深度学习模型的优势是通过Embedding可以准确找到词语间的相似度，但是这也将导致过多的假阳性案例。比如案例3和案例4中的flight attendants 和 the pilots, Prince Charles Camilla 和Charles and Diana. 模型一旦过度依赖(overuse)词语间的相似性将导致这种情况的频繁发生。
+
+            ![1](/static/images/%E7%B3%BB%E5%88%97%E8%A7%A3%E8%AF%BB%E5%85%B1%E6%8C%87%E6%B6%88%E8%A7%A3-%E4%B8%80-%E5%9F%BA%E4%BA%8E%E7%A5%9E%E7%BB%8F%E7%BD%91%E7%BB%9C%E7%9A%84%E8%A1%A8%E5%BE%81%E5%AD%A6%E4%B9%A0%E5%BC%95%E5%85%A5/1.png)
+
+
+        2. 模型没有引入world knowledge(common-sense reasoning)。
+
+
+​           
+
+#### 5 *Higher-order Coreference Resolution with Coarse-to-fine Inference*
+
+> Lee et al., NAACL 2018 与1同是UW的实验室的产出
+>
+> torch repo: https://github.com/YangXuanyue/pytorch-e2e-coref
+>
+> torch repo2: https://github.com/emorynlp/coref-hoi
+
+紧接着上一工作，Lee et al. 于2018年对3.1.1的模型及训练细节完成两点重要改进：高阶推理的引入及由粗到细的筛选算法。前者借鉴实体层级消解框架的思想，在表述的表达中引入其所在共指簇的全局信息，后者优化了从候选表述中提取$K$个候选先行词的优秀率。
+
+1. 高阶共指消解(Higher-order Coreference Resolution)
+
+    我们可以看到表述对共指与否的判断非常依赖表述的表征向量，而1.4中表述的表征向量没有考虑到如果其已经被划分入共指簇后，整个共指簇所带来的额外信息。因此，作者在每个表述的嵌入向量上其加入了已划分的先行词的影响，以更好地帮助模型学习同一共指簇的特性。
+
+    具体地算法过程如下所示，在完成表述表征向量的嵌入后，将对其进行进一步更新。
+
+    1. 初始情况下，设置轮次t=1
+
+    2. 表述的表征向量序列：$g_0^t, g_1^t, g_2^t, g_3^t, ...g_n^t$
+    3. 根据当前参数，我们将每个表述的先行词分布$P$(先行词的共指簇)作为注意力权重，可以得到每个表述的先行词注意力评分$\alpha_{i}^{t}$，如下所示。
+
+    $$
+    a_i^t = \sum_{y_i\in Y_{(i)}}P_t(y_i) \cdot g_{(y_i)}^t
+    $$
+
+    4. 使用门控机制融合当前轮次下span的嵌入向量以及span对应先行词的嵌入向量得到下一轮次span的嵌入向量。
+
+    $$
+    f_i^n = \sigma(W_f[g_i^t, a_i^t])
+    $$
+
+    $$
+    g_i^{t+1} = f_i^t\circ g_i^t + (1-f_i^t)\circ a_i^t
+    $$
+
+    5. 置 t = t+1 重复上述步骤直到 t > T (预先设定的轮次，实验中T=2)
+
+2. 由粗到细的推理(Coarse-to-fine Inference)
+
+    在1.4所提出的模型中，在推理环节为节省计算效率，对于每个表述仅考虑最邻近的$K$个候选表述作为候选先行词。但这人为地限定了共指关系的最大距离，而导致模型预测效果受限。但是当使用$s(a)$共指评分函数作为筛选时，又大幅地增加了计算成本。为解决上述问题，作者提出了以损失一定准确率为代价但计算效率更高的共指评分函数$s_c(\cdot)$来代替原有计算成本更高的共指评分$s(a)$来完成初筛。
+
+    在本文中，作者提出了以损失一定准确率为代价但计算效率更高的共指评分函数$s_c$来代替原有计算成本更高的共指评分$s_a$来完成初筛。
+    $$
+    s_a(i, j) = W_a^\top FFNN_a([g_i, g_j, g_i \circ g_j, \phi(i,j)])
+    $$
+
+    $$
+    s_c(i, j) = g_i^\top W_cg_j
+    $$
+
+    我们需要考虑到，并行化运算时得到的结果矩阵应该是$M \times M$的，代表着所挑选出来的M个表述间共指的评分。通过$s_a$函数运算时，span嵌入矩阵的大小是$M\times|g|$的，每个span又需要其他所有span生成共指嵌入矩阵，其大小为$M\times M\times(3|g|+|\phi|)$.该矩阵经过前馈神经网络即最终得到$M \times M$的评分矩阵。
+
+    但是反观，$s_c$中仅需要处理$M\times |g|$, $M \times M$和$|g|\times |g|$级别的矩阵的矩阵乘法运算，即可得到最终$M \times M$的评分矩阵，故计算成本更加小。
+
+    最终，在筛选潜在先行词时，通过$s_m(i)+s_m(j)+s_c(i,j)$的得分来代替K近邻可以达到既解决了最大共指距离的限制又没有大幅增加计算成本的效果。
+
++ Strengths
+
+    上述两点优化非常重要，高阶共指消解(Higher-order Coreference Resolution)是第一次引入共指簇全局特征的尝试，虽然在后续工作被证明效果很微弱。由粗到细的推理(Coarse-to-fine Inference)在控制内存开销和时间复杂度的情况下优化了表述提取步骤，后续工作均保留该步骤。

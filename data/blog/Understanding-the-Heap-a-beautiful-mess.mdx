@@ -1,0 +1,432 @@
+---
+title: "Understanding the Heap - a beautiful mess"
+date: "2023-01-01"
+tags: ['PWN']
+draft: false
+summary: "In this blog, I am going to explain the important concepts of Heap and use the `ptmalloc` in the Glibc 2.31 library as an example.   The heap is a beautiful mess :)"
+---
+
+In this blog, I am going to explain the important concepts of Heap and use the `ptmalloc` in the Glibc 2.31 library as an example. 
+
+The heap is a beautiful mess :)
+
+
+
+I really like the saying shown above. The word `Heap` we always use refers to the dynamically allocated segment in the virtual memory space of a process, but it actually stands for the implementation of the memory pool(the dynamic memory allocator) behind, which is quite complex and maybe vary on different machines, thus giving us a chance to exploit it. Here I am going to explain the important concepts of Heap and use the `ptmalloc` in the Glibc 2.31 library as an example.
+
+~~I found that the available online material, while very extensive and detailed, may not be friendly for beginners to learn.~~  I just found the [pwn.college](https://dojo.pwn.college/software-exploitation/dynamic-allocator-misuse) gives a **really really really** great lecture on the heap or dynamic memory allocator. However, I still like to try a different ways to introduce these concepts.
+
+Firstly, I will start from the single-thread case and introduce the following points:
+
+1. high-level behavior behind `malloc`: `sbrk` and `mmap`
+2. the overall layout of heap and chunks
+3. the data structures used for management: `malloc_chunk`, `malloc_state`  and `binning`
+
+4. low-level behavior of `malloc`: algorithms for allocating and freeing memory chunks (todo: creating, initialing, and deleting heaps)
+
+Then, I will get multi-threading involved and supplement the following points:
+
+1. t-cache
+
+2. the overall layout of arenas and heaps
+
+3. updating the data structures: `malloc_state` and `heap_info`
+
+```
+// comes from https://guyinatuxedo.github.io/25-heap/index.html
++--------------------+----------------------------+-----------------------+
+|   Bug Used         |  Bin Attack                |   House               |
++--------------------+----------------------------+-----------------------+
+|                    |  Fast Bin Attack           |   House of Spirit     |
+|   Double Free      |  tcache attack             |   House of Lore       |
+|   Heap Overflow    |  Unsorted Bin Attck        |   House of Force      |
+|   Use After Free   |  Small / Large Bin Attck   |   House of Einherjar  |
+|                    |  Unsafe Unlink             |   House of Orange     |
++--------------------+----------------------------+-----------------------+
+```
+
+### Overview of Heap
+
+Pools are a common design pattern in computing technology, which involves: pre-allocating and keeping a pool of core resources that are frequently used in a program, which are self-managed by the program, in order to improve resource utilization and ensure that the program has a fixed number of resources.
+
+Memory pools are a technique for dynamically allocating and managing memory. Typically, programmers are used to directly using APIs such as new, delete, malloc, and free to allocate and release memory, which can result in a large number of memory fragments over time when the program is run for a long time and the size of the allocated memory blocks is not fixed, reducing the performance of the program and the operating system.
+
+Before actually using memory, a memory pool pre-allocates a large block of memory (the memory pool) as a reserve. When a programmer requests memory, a block is dynamically allocated from the pool. When the programmer releases the memory, it is returned to the pool and can be used again when requested, and is merged with surrounding free memory blocks as much as possible. If the memory pool is not sufficient, the memory pool is automatically expanded and a larger memory pool is requested from the operating system.
+
+The benefits of using memory pools include:
+
+- Reducing internal fragmentation by using chunk merging to minimize internal fragmentation as much as possible;
+- Reducing external fragmentation by requesting a large block of memory from memory at once;
+- Improving the efficiency of memory allocation by requesting a large block of memory from memory at once and using it slowly, avoiding frequent requests to memory for memory operations.
+
+In a C program, we always use built-in functions like`malloc()`, `calloc()`, and `realloc(), `which indeed invoke the memory allocator `ptmalloc`, to get a dynamically allocated memory space. The `ptmalloc` is the implementation of the memory pool in Glibc library used by default.
+
+#### System calls behind malloc
+
+In ptmalloc’s implementation, `malloc` use `(s)brk` or `mmap` system call for memory allocation.
+
+According to the [man pages of (s)brk](https://man7.org/linux/man-pages/man2/sbrk.2.html):
+
+> ```
+> brk() and sbrk() change the location of the program break, which
+> defines the end of the process's data segment (i.e., the program
+> break is the first location after the end of the uninitialized
+> data segment).  Increasing the program break has the effect of
+> allocating memory to the process; decreasing the break
+> deallocates memory.
+> ```
+
+According to the [man pages of mmap](https://man7.org/linux/man-pages/man2/mmap.2.html):
+
+>```
+>mmap() creates a new mapping in the virtual address space of the
+>calling process.  The starting address for the new mapping is
+>specified in addr.  The length argument specifies the length of
+>the mapping (which must be greater than 0).
+>```
+
+In short, both` (s)brk`and `mmap` are the system calls that provide the functionality to create new memory space(with custom permissions). However, `(s)brk` only can create memory space following the `.data` segment(change the location of program break);
+
+**Calling (s)brk or mmap?**
+
+According to [this page](https://stackoverflow.com/questions/30542428/does-malloc-use-brk-or-mmap): 
+
+`mallopt()` could set parameters to control behavior of `malloc()`, and there is a parameter named `M_MMAP_THRESHOLD`, in general:
+
+- If the requested memory is less than it, `brk()` will be used;
+- If the requested memory is larger than or equal to it, `mmap()` will be used;
+
+The default value of the parameter is `128KB` (on my system). And what has been mentioned in the `pwn.college` is that set `M_MMAP_THRESHOLD` could cause more overhead.
+
+#### Overall layout of Heap
+
+In `ptmalloc` memory allocator, chunks of various sizes exist within a larger region of memory (a "heap"). The heap grows up from the lower address. The main heap(the heap initialized by the main thread) starts by following the `.BSS` segment (the original program breakpoint).
+
+**Heap**
+
+A contiguous region of memory that is subdivided into chunks to be allocated.
+
+**Chunk**
+
+A small range of memory that can be allocated (owned by the application), freed (owned by glibc), or combined with adjacent chunks into larger ranges. Note that a chunk is a wrapper around the block of memory that is given to the application.
+
+![](/static/images/Understanding-the-Heap-a-beautiful-mess/layout_of_heap_chunks.png)
+
+
+
+### Data structures for heap
+
+The heap metadata is organized with the help of the following three data structures: malloc_chunk(chunk header), malloc_state, and heap_info(introduced later).
+
++ malloc_chunk: The chunk is the smallest unit allocated by malloc, and each chunk has its own `malloc_chunk` header structure.
++ malloc_state: heaps are governed by a single `malloc_state` header structure. This structure tells the allocator where the top chunk (chunk at the highest address), last remainder chunk, bins, etc. are.
+
+#### malloc_chunk(chunk header)
+
+The chunk is the smallest unit allocated by malloc. Chunks have two different states: in-use or free.
+
+![](/static/images/Understanding-the-Heap-a-beautiful-mess/chunks.png)
+
+An **in-use** chunk consists of 3 parts: the previous chunk size or the previous chunk user data, the chunk size(8 bytes in 64-bit machines), the AMP flag(3-bit), and user data.  The user data will be padded to align with 16 bytes on 64-bit machines, which means the last three bits of the size of user data in hex format will always be zero. Therefore, we could take advantage of the alignment and use them as flags.
+
+An **free** chunk consists of 4 parts. The first 16 bytes stay the same. Now that this chunk is free, two new parts (fwd and bkd) will be written into this chunk and one(pre_size) into the next chunk. The forward pointer `fwd` stores the address of the next free chunk in the list, and the back pointer `bkd` saves the address of the previous free chunk in the list if any. Lastly, the `pre_size` of the next chunk will be set to this chunk’s CHUNK SIZE.
+
+**the overlapping part**
+
+An interesting point here is that the first 8 bytes **might be** the overlapping part of the previous chunk. If the previous chunk is in use, then this part will hold the previous last 8 bytes of data, and if the previous chunk is free, it will hold the previous’ chunk size.
+
+This is because the size of a chunk should be multiple of 0x10, and if the asked memory size ends with 0x8 or round to 0x8, to improve the space usage, ptmalloc would make chunk overlapped. Specifically, for example if we are trying to allocate 0x18 bytes, you would get a total 0x18+0x10(header)+0x8(padding)=0x30 bytes for the current chunk, and the size field would be 0x20 bytes and next chunk pointer would be placed to current `mchunptr` + 0x30 - 0x8 which indicating the next chunk would overlap with the current chunk. However, it doesn't matter since the first 8 bytes of next chunk won't used until the current chunk is freed, this key insight help us saving 8 bytes memory.
+
+![overlapped_chunk](/static/images/Understanding-the-Heap-a-beautiful-mess/overlapped_chunk.png)
+
+**AMP flags**
+
+**A**, Allocated Arena - the main arena uses the application's heap. Other arenas use mmap'd heaps. To map a chunk to a heap, you need to know which case applies. If this bit is 0, the chunk comes from the main arena and the main heap. If this bit is 1, the chunk comes from mmap'd memory and the location of the heap can be computed from the chunk's address.
+
+**M**, MMap'd chunk - this chunk was allocated with a single call to `mmap` and is not part of a heap at all.
+
+**P**, Previous chunk is in use - if set, the previous chunk is still being used by the application, and thus the `prev_size` field is invalid. Note - some chunks, such as those in fastbins (see below) will have this bit set despite being free'd by the application. This bit really means that the previous chunk should not be considered a candidate for coalescing - it's "in use" by either the application or some other optimization layered atop malloc's original code.
+
+**minimum size of the chunk**
+
+In order to ensure that a chunk's payload area is large enough to hold the overhead needed by malloc, the minimum size of a chunk is `4*sizeof(void*)` (unless `size_t` is not the same size as `void*`). The minimum size may be larger if the ABI of the platform requires additional alignment. Note that `prev_size` does not increase the minimum chunk size to `5*sizeof(void*)` because when the chunk is small the `bk_nextsize` pointer is unused, and when the chunk is large enough to use it there is more than enough space at the end.
+
+**the malloc_chunk struct type**
+
+```
+/*
+  This struct declaration is misleading (but accurate and necessary).
+  It declares a "view" into memory allowing access to necessary
+  fields at known offsets from a given base. See explanation below.
+*/
+struct malloc_chunk {
+
+  INTERNAL_SIZE_T      prev_size;  /* Size of previous chunk (if free).  */
+  INTERNAL_SIZE_T      size;       /* Size in bytes, including overhead. */
+
+  struct malloc_chunk* fd;         /* double links -- used only if free. */
+  struct malloc_chunk* bk;
+
+  /* Only used for large blocks: pointer to next larger size.  */
+  struct malloc_chunk* fd_nextsize; /* double links -- used only if free. */
+  struct malloc_chunk* bk_nextsize;
+};
+```
+
+#### malloc_state
+
+![](/static/images/Understanding-the-Heap-a-beautiful-mess/malloc_state.png)
+
+Struct `malloc_state` contains the necessary variables to manage the free memory chunks. The struct `malloc_state` of the main thread (the main heap) is stored in the memory mapping segment as a global variable.
+
+```
+struct malloc_state
+{
+  /* Serialize access.  */
+  __libc_lock_define (, mutex);
+  /* Flags (formerly in max_fast).  */
+  int flags;
+
+  /* Fastbins */
+  mfastbinptr fastbinsY[NFASTBINS];
+  /* Base of the topmost chunk -- not otherwise kept in a bin */
+  mchunkptr top;
+  /* The remainder from the most recent split of a small request */
+  mchunkptr last_remainder;
+  /* Normal bins packed as described above */
+  mchunkptr bins[NBINS * 2 - 2];
+
+  /* Bitmap of bins */
+  unsigned int binmap[BINMAPSIZE];
+
+  /* Linked list */
+  struct malloc_state *next;
+  /* Linked list for free arenas.  Access to this field is serialized
+     by free_list_lock in arena.c.  */
+  struct malloc_state *next_free;
+  /* Number of threads attached to this arena.  0 if the arena is on
+     the free list.  Access to this field is serialized by
+     free_list_lock in arena.c.  */
+
+  INTERNAL_SIZE_T attached_threads;
+  /* Memory allocated from the system in this arena.  */
+  INTERNAL_SIZE_T system_mem;
+  INTERNAL_SIZE_T max_system_mem;
+};
+
+typedef struct malloc_state *mstate;
+```
+
+#### binning
+
+Free chunks are stored in various free lists based on size and history so that the allocator can find suitable chunks to satisfy allocation requests quickly. The free lists are actually called **bins**. Bins are in-memory linked structures that keep track of all the freed chunks.
+
+**Fast Bins**
+
+Most programs often request and release relatively small chunks of memory. If some smaller chunks are freed, and a free chunk adjacent to them is found and merged, the next time a chunk of the same size is requested, the chunk needs to be partitioned, which greatly reduces the efficiency of heap utilization. Therefore, `fastbin` has been proposed to keep access fast by keeping minimal logic.
+
++ 7 bins are used by default, however, the number of bins in `fastbins` is defined by `NFASTBINS`
++ The fast bins are singly-linked lists, and the chunks in each list are all the same size and chunks in the middle of the list need never be accessed.
++ On `x64` machines, the sizes range from `0x20` - `0x80` by default. The size of each bin increase by 0x10 bytes. So a chunk of size `0x20-0x2f` would fit into `idx` `0`, a chunk of size `0x30-0x3f` would fit into `idx` `1`, and so on and so forth.
++ The in-use flag of chunks added to a fast bin is always set to 1 so that they will not combine with adjacent chunks to keep access fast (hence *fast* bins). However, if the chunks in fast/small bins cannot satisfy, the fast bin would be consolidated.
++ LIFO manner
+
+**Unsorted Bin**
+
+The `bins[]` actually contains 3 different kind of bins: `unsorted bin`, `small bins` and`large bins`.
+
+The bins[1] is unsorted bin (bins[0] is unused). When chunks are free, they're initially stored in a single bin. They're sorted later, in malloc, in order to give them one chance to be quickly re-used. This also means that the sorting logic only needs to exist at one point - everyone else just puts free chunks into this bin, and they'll get sorted later. The "unsorted" bin is simply the first of the regular bins.
+
+We would see how `	unsorted bin` be used later in the allocation algorithm.
+
+**Small Bins**
+
++ There are 62 small bins (index 2-63), and each bin is a doubly-linked list;
++ Each bin(list) has an identical size. The bin with index `n` has a chunk size `(16n, 16n+16)`;
++ The max size of small bins is defined by MIN_LARGE_SIZE, which usually be 1024B(1KB);
++ FIFO manner;
+
+**Large Bins**
+
++ There are 63 small bins (index 64-127), and each bin is a doubly-linked list;
++ A particular large bin has chunks of different sizes, sorted in decreasing order (i.e. largest chunk at the 'HEAD' and smallest chunk at the 'TAIL').
++ Chunk size in large bins is between `1024 B` and `128 KB` inclusive (or whatever value `M_MMAP_THRESHOLD` is set to)
+
++ Insertions and removals happen at any position within the list.
+
+
+
+### low-level behavior of malloc
+
+#### chunk allocation algorithm
+
+1. Obtain the lock for the allocation area to prevent multi-threaded conflicts.
+2. Calculate the actual size of the chunk of memory that needs to be allocated.
+3. If the chunk size is less than the max size of fast bins (128 bytes), try to find a suitable chunk in the fast bins. If one is found, allocation is complete. Otherwise, proceed to the next step.
+4. If the chunk size is less than the max size of small bins (1KB), search the small bins for a suitable chunk. If one is found, allocation is complete. Otherwise, proceed to the next step.
+5. Tidy the unsorted memory blocks:
+    1. Ptmalloc will first iterate through the chunks in the fast bins, merging adjacent chunks and linking them to the unsorted bin.
+    2. Then it will iterate through the unsorted bins. If there is a chunk larger than the one being allocated in the unsorted bins, it will be split, and the remaining chunk will be placed back in the unsorted bins. If there is a chunk of the same size as the one being allocated, it will be returned and removed from the unsorted bins. If a chunk in the unsorted bins is within the range of small bins in size, it will be placed at the head of the small bins. If a chunk in the unsorted bins is within the range of large bins in size, it will be placed in a suitable position in the large bins. (The only place in the code base to put chunks in S/L bins) If the allocation is not successful, proceed to the next step.
+6. Search the large bins for a suitable chunk, then split it, allocating part to the user and placing the remainder in the unsorted bin.
+7. If no suitable chunk is found in the fast bins or bins, the top chunk must be used for allocation. When the top chunk is larger than the memory requested by the user, it will be split into two parts: the user chunk and the remainder chunk. The remainder chunk becomes the new top chunk.
+8. If the top chunk is still not large enough to meet the user's requested size, we need to extend it through the `sbrk` (main arena) or `mmap` (thread arena) system calls.
+    1. If `mmap` is used, a new chunk with the requested size aligned to a 4KB will be created and added to the top chunk. The top chunk will then be extended by the requested amount.
+    2. If `sbrk` is used, the top chunk will be extended by the requested amount, and the remainder will be added to the unsorted bin. However, if it is the first time to call `malloc` in the main thread, a initialization work is needed to allocate a chunk of size (chunk_size + 128KB) align 4KB as the initial heap.
+9. Release the lock for the allocation area.
+
+When the user requests memory allocation using malloc, the chunk found by ptmalloc2 may not be the same size as the requested memory. In this case, the remaining portion after the split is called the last remainder chunk and is also stored in the unsorted bin.
+
+#### chunk free algorithm
+
+1. Obtain the lock for the allocation area to ensure thread safety.
+2. If the pointer being freed is null, return and do nothing.
+3. If the chunk size falls within the range of fast bins, place it in the fast bins.
+4. Check if the current chunk is a memory mapped by the `mmap` system call. If it is, release it directly using `munmap()`. In the data structure of the previously used chunk, we can see that there is an `M` to indicate whether it is a memory mapped by `mmap`.
+5. Check if the chunk being freed is adjacent to another free chunk. If it is, merge them and place the merged block in the unsorted bin. If the size of the merged chunk is greater than `fastbin_coalsed_threshold` (128B), trigger the fastbin merge operation, where adjacent free chunks will be merged and placed in the unsorted bin.
+6. Check if the chunk is adjacent to the top chunk. If it is, merge it directly with the top chunk. Then, check if the size of the top chunk is greater than the mmap shrink threshold (default 128KB). If it is, for the main allocation area, it will try to return part of the top chunk to the operating system. Free is finished.
+
+
+
+### multi-threading
+
+#### tcache
+
+The `tcache` mechanism was introduced in version 2.26 of GNU libc's malloc implementation, which was released on August 2, 2017, to speed up repeated (small) allocations in a single thread. It is implemented as a **singly-linked** list, with each thread having a list header for different-sized allocations.
+
+```
+typedef struct tcache_perthread_struct
+{
+  char counts[TCACHE_MAX_BINS];
+  tcache_entry *entries[TCACHE_MAX_BINS];
+} tcache_perthread_struct;
+
+typedef struct tcache_entry
+{
+  struct tcache_entry *next;
+  struct tcache_perthread_struct *key;
+} tcache_entry;
+```
+
+It has been described so clear in the [pwn.college](https://dojo.pwn.college/software-exploitation/dynamic-allocator-misuse) on what the t-cache looks like. Basically, the place used to save `bk`ptr in fast, unsorted, and small bins has been assigned to save the `tcache_struct,` which is the`key`.
+
+![t-cache](/static/images/Understanding-the-Heap-a-beautiful-mess/t-cache.png)
+
+When an allocation request is made, the malloc implementation first checks the tcache for available chunks of the requested size class. If there is an available chunk, the implementation returns it to the caller. If there are no available chunks in the tcache, the malloc implementation reverts to its standard allocation algorithm to find a suitable chunk of memory.
+
+![tcache-free](/static/images/Understanding-the-Heap-a-beautiful-mess/tcache-free.png)
+
+![tcache-allocate](/static/images/Understanding-the-Heap-a-beautiful-mess/tcache-allocate.png)
+
+#### Overall layout of arenas and heaps
+
+#### Arena per thread
+
+In ptmalloc’s implementation, an Arena is a large, contiguous piece of memory to store per-thread heaps(a memory pool that is managed by a particular program).
+
+By using the following code, we could better understand the behavior of ptmalloc when multi-threads get involved.
+
+```
+https://sploitfun.wordpress.com/2015/02/10/understanding-glibc-malloc/
+/* Per thread arena example. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+void* threadFunc(void* arg) {
+        printf("Before malloc in thread 1\n");
+        getchar();
+        char* addr = (char*) malloc(1000);
+        printf("After malloc and before free in thread 1\n");
+        getchar();
+        free(addr);
+        printf("After free in thread 1\n");
+        getchar();
+}
+
+int main() {
+        pthread_t t1;
+        void* s;
+        int ret;
+        char* addr;
+
+        printf("Welcome to per thread arena example::%d\n",getpid());
+        printf("Before malloc in main thread\n");
+        getchar();
+        addr = (char*) malloc(1000);
+        printf("After malloc and before free in main thread\n");
+        getchar();
+        free(addr);
+        printf("After free in main thread\n");
+        getchar();
+        ret = pthread_create(&t1, NULL, threadFunc, NULL);
+        if(ret)
+        {
+                printf("Thread creation error\n");
+                return -1;
+        }
+        ret = pthread_join(t1, &s);
+        if(ret)
+        {
+                printf("Thread join error\n");
+                return -1;
+        }
+        return 0;
+}
+```
+
+Before calling `malloc` in the main thread, we could see that there is no heap segment.
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-1.png)
+
+A heap segment will be created after calling `malloc` in the main thread, and the allocated size is often larger than the requested size to reduce switching times between kernel and user modes, thus improving program efficiency. This contiguous region of heap memory is called an `Arena`. Since this arena is created by the main thread, its called the `main arena`. Further allocation requests keep using this arena until it runs out of free space.
+
+For example, in the following case, ptmalloc2 creates a segment with size 0x21000(132KB) even though we just request 0x1000(4KB) bytes. The rest memory will be managed by ptmalloc2.
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-2.png)
+
+After calling the `free` function in the main thread, the created memory space (heap segment) won't be reclaimed directly but will be managed by ptmalloc2 again. When a later program requests memory, ptmalloc2 will allocate the corresponding memory to the program according to the heap allocation algorithm.
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-2.png)
+
+After calling `pthread_create` to create a thread, a size of 8MB of memory has been allocated in the memory mapping segment for the created thread. The thread has its own stack, which is located in this area. However, currently, I have no idea what does the top 4KB with permission `---p` used for. 
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-7.png)
+
+After calling `malloc` in thread 1, we could see the memory space with a size of 21000 bytes(132KB) again has been allocated by the ptmalloc even though we just requested 1000 bytes(4KB). But this time, the heap is in the memory mapping segment rather than following the program breaking point. This contiguous region of memory (132 KB) is called the thread arena.
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-3.png)
+
+After calling `free` in thread 1, we can see that freeing allocated memory region doesnt release heap memory to the operating system. Instead allocated memory region (of size 1000 bytes) is released to ptmolloc, which adds this freed block to its thread arenas bin.
+
+![overview-1](/static/images/Understanding-the-Heap-a-beautiful-mess/overview-5.png)
+
+Another important point here is that it is not exactly one arena per thread, as expected, since it would become expensive when there are many threads. Hence, the application’s `arena limit is based on the number of cores` present in the system.
+
+```
+For 32 bit systems: Number of arena = 2 * number of cores.
+For 64 bit systems: Number of arena = 8 * number of cores.
+```
+
+The actual behavior of ptmalloc when one-to-one mapping between threads and arena doesn't get enough could become much more complicated, so I would stop here for a starter point. More information could refer to: https://sploitfun.wordpress.com/2015/02/10/understanding-glibc-malloc/
+
+#### heap_info and malloc_state
+
+
+
+### References
+
+>https://sensepost.com/blog/2017/painless-intro-to-the-linux-userland-heap/
+>
+>https://ctf-wiki.org/pwn/linux/user-mode/heap/ptmalloc2/heap-structure/
+>
+>https://raydenchia.com/heaps-of-fun-with-glibc-malloc/
+>
+>https://0x434b.dev/overview-of-glibc-heap-exploitation-techniques/
+>
+>https://sourceware.org/glibc/wiki/MallocInternals
+>
+>https://blog.csdn.net/weixin_37921201/article/details/119744197
+>
+>https://heap-exploitation.dhavalkapil.com/attacks/double_free

