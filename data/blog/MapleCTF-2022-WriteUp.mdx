@@ -1,17 +1,14 @@
 ---
-title: "MapleCTF 2022 Pwn Warmup1&2 Writeup"
-date: "2022-08-30"
+title: 'MapleCTF 2022 Pwn Warmup1&2 Writeup'
+date: '2022-08-30'
 tags: ['PWN', 'Writeup']
 draft: false
-summary: "This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary."
+summary: 'This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary.'
 ---
 
+This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary.
 
-This blog is the writeup of the two pwn challenges, warmup1 and warmup2, which are provided in the recent Maple CTF 2022. Though they are just warmup, I think they are really interesting and kind of complex in terms of the second one, which are worth evaluation and summary. 
-
-
-
-This is my first time blogging in English. The reason why I trade off a bit of efficiency and decide to switch to English is that I found writing in English would help me fit in the new environment more smoothly, since I currently study in the U.S. And the second reason is that there are more audience who can't understand Chinese and I don't want to keep them away due to the language issue. However, I am still practicing my English, so plz be tolerant of my silly grammatical mistakes. 
+This is my first time blogging in English. The reason why I trade off a bit of efficiency and decide to switch to English is that I found writing in English would help me fit in the new environment more smoothly, since I currently study in the U.S. And the second reason is that there are more audience who can't understand Chinese and I don't want to keep them away due to the language issue. However, I am still practicing my English, so plz be tolerant of my silly grammatical mistakes.
 
 Hope you enjoy it!
 
@@ -121,21 +118,19 @@ However, for the binary compiled without PIE, the .text segment address will sta
 
 ![截屏2022-08-29 上午10.48.31](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-29%20%E4%B8%8A%E5%8D%8810.48.31.png)
 
-So, with PIE enabled, I need to do a few more steps to construct our ROP chains, since the gadgets's addresses are unavailable until the binary is being executed. 
+So, with PIE enabled, I need to do a few more steps to construct our ROP chains, since the gadgets's addresses are unavailable until the binary is being executed.
 
-**How can we bypass the PIE mitigation?** 
+**How can we bypass the PIE mitigation?**
 
 Now, let's look at the chall with this question in mind.
 
 ![截屏2022-08-26 下午8.54.35](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-26%20%E4%B8%8B%E5%8D%888.54.35.png)
 
-
-
-**As you can see, although the instruction's addresses are different each time, the last 3 digits（the lower 12 bits) of the address in hexadecimal format of each func address is the same as the offset address when we check it statically.** It doesn't affected by the PIE. This is the PIE's feature which we can exploit. This is because the .text segment will be loaded in page as a minimum unit to memory, and page size is 4KB which is 0x1000 bytes. So, if we can get/leak any one of the instruction addresses, we can easily infer the base address of the corresponding page and then calculate the actual instruction addresses in that pages(since the program is quite tiny, they often stay on the same page.). 
+**As you can see, although the instruction's addresses are different each time, the last 3 digits（the lower 12 bits) of the address in hexadecimal format of each func address is the same as the offset address when we check it statically.** It doesn't affected by the PIE. This is the PIE's feature which we can exploit. This is because the .text segment will be loaded in page as a minimum unit to memory, and page size is 4KB which is 0x1000 bytes. So, if we can get/leak any one of the instruction addresses, we can easily infer the base address of the corresponding page and then calculate the actual instruction addresses in that pages(since the program is quite tiny, they often stay on the same page.).
 
 However, if we can't leak any instruction address, it doesn't means that we can't bypass the PIE mitigation, we can still redirect the control flow to the place we want by using a technique called **Partial Write.**
 
-Let's see, for which instructions in the same page, their address's first 9 chars are is the same. When this vuln func is finished and begins to return to the main func, the ret address is 0x555555555212 which is the main+68's address, and the win func which is used for cat the flag is at 0x555555555219. They are pretty close. So we could just overflow an \x19 to overwrite the last byte of the ret address, so that it can direct to the win func and cat the flag then. 
+Let's see, for which instructions in the same page, their address's first 9 chars are is the same. When this vuln func is finished and begins to return to the main func, the ret address is 0x555555555212 which is the main+68's address, and the win func which is used for cat the flag is at 0x555555555219. They are pretty close. So we could just overflow an \x19 to overwrite the last byte of the ret address, so that it can direct to the win func and cat the flag then.
 
 ![截屏2022-08-26 下午8.51.17](/static/images/MapleCTF-2022-WriteUp/%E6%88%AA%E5%B1%8F2022-08-26%20%E4%B8%8B%E5%8D%888.51.17.png)
 
@@ -164,10 +159,10 @@ The binary of warmup2 has turned on the full protection. However, we can bypass 
 
 After I checked the binary, I didn't find any func like the win func in the warmup1, meaning that I need to use the system func and /bin/sh in the glibc. So at least, the following things we have to confirm to get shell.
 
-+ The canary.
-+ The base loading address of .text segment which is used to locate the helpful address of gadgets , so that we can construct our own ROP chain.
-+ The glibc version used on the server.
-+ The base loading address of glibc which enables us to locate the system func and /bin/sh string's address in the glibc.
+- The canary.
+- The base loading address of .text segment which is used to locate the helpful address of gadgets , so that we can construct our own ROP chain.
+- The glibc version used on the server.
+- The base loading address of glibc which enables us to locate the system func and /bin/sh string's address in the glibc.
 
 The vulnerable is func is shown below. There are two printf func followed two read func which enable us to manipulate the stack and show what is inside.
 
@@ -175,12 +170,12 @@ The vulnerable is func is shown below. There are two printf func followed two re
 
 So our route of exploitation would be as follows:
 
-+ Using the first read func to overwrite the last byte of canary and leverage the following printf func to leak the canary.
-+ Using the second read func to redirect the program's control flow to the vuln func again, since more read&printf func is needed.
-+ At the second round, first we can leak the base address of .text segment since by printing the ret address(main+68) in the stack.
-+ And then, we try to leak the func's address in glibc. (more details below)
-+ By leveraging the leaked func address(e.g. read, printf), we can decide the glibc's version used on the server and calculate the base address of glibc.  And finally redirect to the vuln func again.
-+ After getting everything confirmed, during the last round, let's pwn this binary and get shell!
+- Using the first read func to overwrite the last byte of canary and leverage the following printf func to leak the canary.
+- Using the second read func to redirect the program's control flow to the vuln func again, since more read&printf func is needed.
+- At the second round, first we can leak the base address of .text segment since by printing the ret address(main+68) in the stack.
+- And then, we try to leak the func's address in glibc. (more details below)
+- By leveraging the leaked func address(e.g. read, printf), we can decide the glibc's version used on the server and calculate the base address of glibc. And finally redirect to the vuln func again.
+- After getting everything confirmed, during the last round, let's pwn this binary and get shell!
 
 Next, let me elaborate on a few key points in the above process.
 
@@ -212,7 +207,7 @@ Let's review what the warmup1 chall has taught us. Yes, partial write again.
 
 The ret address of the vuln func is 0x5555555552e2(main+64), and instruction of `call vuln` address locate at 0x5555555552dd(main+63), so we can just overwrite the last byte of ret address in the stack to \xdd to redirect the flow to vuln again.
 
-The reason why the instruction addresses shown above start with 0x55555555 is that I am using the gdb to debug the binary. It would be different when the binary is executed independently. 
+The reason why the instruction addresses shown above start with 0x55555555 is that I am using the gdb to debug the binary. It would be different when the binary is executed independently.
 
 **One more thing worth noting is that why we didn't jump to where the main func or the vuln func start?** Because we can't, it would cause the segment fault you have tested it. For the former one, it starts with `push rbp;mov rbp, rsp;`and be careful that we just pop the ret address, so the stack may no longer be aligned to 16 bytes. However, the `call` instruction helps us push the next instruction after call the func to the stack which helps us avoid this issue. For the latter one, where the vuln func starts is 0x5555555551f1 and we couldn't redirect to this address by just overwriting one byte(If we really want to do this, we need to brute-force the second to last byte.)
 
@@ -237,7 +232,7 @@ The good new is that there are two ways!
 
 We could find ret address of main func in the stack which is the \_\_libc_start_main+205 which is just 16 bytes higher than the rbp (when we are in the vuln func).
 
-However, we should be noted that the offset(205), will be different depending on the version too. So don't try to use this offset to get the start address of  \_\_libc_start_main. Luckily, there is  \_\_libc_start_main_ret symbol in the libc database. Try this one.
+However, we should be noted that the offset(205), will be different depending on the version too. So don't try to use this offset to get the start address of \_\_libc_start_main. Luckily, there is \_\_libc_start_main_ret symbol in the libc database. Try this one.
 
 This link would be really helpful: https://libc.rip/
 
@@ -283,7 +278,7 @@ print('[+]\033[32m Wow! We got the read func address: %s \033[0m' % hex(read_got
 Finally, we could determain the glibc version and the address of system() and /bin/sh.
 
 ```
-# try to calculate the system and /bin/sh's address 
+# try to calculate the system and /bin/sh's address
 libc = LibcSearcher('read', printf_got_address)
 libc.add_condition("read", read_got_address)
 libcbase = printf_got_address - libc.dump('read')
@@ -352,7 +347,7 @@ sh.recvuntil(b'too!\n')
 read_got_address = int.from_bytes(sh.recvline()[:-1].ljust(8,b'\x00'), 'little')
 print('[+]\033[32m Wow! We got the read func address: %s \033[0m' % hex(read_got_address))
 
-# try to calculate the system and /bin/sh's address 
+# try to calculate the system and /bin/sh's address
 libc = LibcSearcher('read', printf_got_address)
 libc.add_condition("read", read_got_address)
 libcbase = printf_got_address - libc.dump('read')
@@ -371,4 +366,3 @@ sh.send(payload5)
 print("[*] Payload sended: %s" % payload5)
 sh.recvuntil(b'too!')
 ```
-

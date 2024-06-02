@@ -1,14 +1,12 @@
 ---
-title: "S.H.E.L.L. CTF 2022 Writeup"
-date: "2022-08-16"
+title: 'S.H.E.L.L. CTF 2022 Writeup'
+date: '2022-08-16'
 tags: ['Writeup']
 draft: false
-summary: "本次比赛以Th3ee参赛，最终在1092支参赛队伍取得92名的成绩。比赛的题目整体水平比较偏简单(Crypto, Forensic, Misc)。由于比赛没有PWN的题目，所以我本次比赛主要负责Forensics及其他类型的题目。值得一提的是，我们Th3ee的队标新鲜出炉，快点进来看看吧！"
+summary: '本次比赛以Th3ee参赛，最终在1092支参赛队伍取得92名的成绩。比赛的题目整体水平比较偏简单(Crypto, Forensic, Misc)。由于比赛没有PWN的题目，所以我本次比赛主要负责Forensics及其他类型的题目。值得一提的是，我们Th3ee的队标新鲜出炉，快点进来看看吧！'
 ---
 
 本次比赛以Th3ee参赛，最终在1092支参赛队伍取得92名的成绩。比赛的题目整体水平比较偏简单(Crypto, Forensic, Misc)。由于比赛没有PWN的题目，所以我本次比赛主要负责Forensics及其他类型的题目。值得一提的是，我们Th3ee的队标新鲜出炉，快点进来看看吧！
-
-
 
 We are Th3ee，
 
@@ -28,21 +26,21 @@ XSS漏洞题目，Get请求接受用户输入然后将字符串小写后返回�
 <img src="x" onerror="javascript:alert(1)"/>
 ```
 
-![img](/static/images/SHELL-CTF-2022-Writeup/gg5QsWoqqT5Pujwb6Tatpw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/gg5QsWoqqT5Pujwb6Tatpw.png)
 
 此时，response的报文中提供了flag。猜测服务器后端会首先过滤script关键字，然后对选手的输入是否为js代码进行判断。若存在js代码则说明注入成功，服务器后端自动将回显替换为flag。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/JnLOw_s6rrqGYoyfXkJ3wA.png)                         ![img](/static/images/SHELL-CTF-2022-Writeup/fViEHrqW8lXaYgnEH6XKRQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/JnLOw_s6rrqGYoyfXkJ3wA.png) ![img](/static/images/SHELL-CTF-2022-Writeup/fViEHrqW8lXaYgnEH6XKRQ.png)
 
 ### **Colour Cookie**
 
 简答的变量修题目，关键在于猜测作者用意，并进行尝试。题目要求我们输入一个名称作为 GET 参数name，但并没有回显。
 
-题目给出提示，说现在网页具有好看的版式，即要求我们查看CSS文件，发现存在一行注释为“name = C0loR”，因此尝试输入 C0loR，但是并没有效果。根据题目想到可能需要在 Cookie 中添加一样的，也并未有效果。后经提示可能需要将参数名称替换？于是执行下属请求即可。     ![img](/static/images/SHELL-CTF-2022-Writeup/M4gk7cip30z2HIZwT9TKkA.png)        
+题目给出提示，说现在网页具有好看的版式，即要求我们查看CSS文件，发现存在一行注释为“name = C0loR”，因此尝试输入 C0loR，但是并没有效果。根据题目想到可能需要在 Cookie 中添加一样的，也并未有效果。后经提示可能需要将参数名称替换？于是执行下属请求即可。 ![img](/static/images/SHELL-CTF-2022-Writeup/M4gk7cip30z2HIZwT9TKkA.png)
 
 页面回显 flag。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/2bmRQniApHw5cpKyhNmB3A.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/2bmRQniApHw5cpKyhNmB3A.png)
 
 ```
 shellctf{C0ooooK13_W17h_c0ooorr3c7_Parr4m37er...}
@@ -54,15 +52,15 @@ shellctf{C0ooooK13_W17h_c0ooorr3c7_Parr4m37er...}
 
 反汇编可以发现flag字符串存在的内存地址，寻找到之后。直接提交答案即可
 
-![img](/static/images/SHELL-CTF-2022-Writeup/aDglIkvtCLnOswzKCu6JPQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/aDglIkvtCLnOswzKCu6JPQ.png)
 
-![img](/static/images/SHELL-CTF-2022-Writeup/pD-_gVFqgOM_1QfS_303Bg.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/pD-_gVFqgOM_1QfS_303Bg.png)
 
 ### **keygen**
 
 反汇编之后，寻找到getString函数。在函数当中发现了flag
 
-![img](/static/images/SHELL-CTF-2022-Writeup/WCJR7ni-nRJqHnJc4mzZJA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/WCJR7ni-nRJqHnJc4mzZJA.png)
 
 ### **warmup**
 
@@ -109,15 +107,15 @@ shellctf{C0ooooK13_W17h_c0ooorr3c7_Parr4m37er...}
 
 通过观察函数可以发现，字符串长度必须是27。而且要与v6中每个数值右移4位相同。这样才能保证v4通过 按位与 的操作之后始终保持数值为1。所以呢，我们只需要把v6中的值，一个一个的计算出来就行了。
 
-这里呢，我偷了懒。我是直接去汇编代码中找的。然后打上断点，可以得到每个字符的十六进制数，这样我再去对应ASCII码表就行了。                 ![img](/static/images/SHELL-CTF-2022-Writeup/9tfMjS909vgDfLvKzPR2fw.png)        
+这里呢，我偷了懒。我是直接去汇编代码中找的。然后打上断点，可以得到每个字符的十六进制数，这样我再去对应ASCII码表就行了。 ![img](/static/images/SHELL-CTF-2022-Writeup/9tfMjS909vgDfLvKzPR2fw.png)
 
 ### **how to defeat a dragon**
 
 反编译之后，flag就在v5里面。是以十六进制的形式表示出来的。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/O55v0HcgJ8oTM-tLFQLEJw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/O55v0HcgJ8oTM-tLFQLEJw.png)
 
-找了个在线网站，转换了一下                 ![img](/static/images/SHELL-CTF-2022-Writeup/LIxUQZ2v0gurAg3PfU2eHw.png)        
+找了个在线网站，转换了一下 ![img](/static/images/SHELL-CTF-2022-Writeup/LIxUQZ2v0gurAg3PfU2eHw.png)
 
 ### **tea**
 
@@ -125,11 +123,11 @@ shellctf{C0ooooK13_W17h_c0ooorr3c7_Parr4m37er...}
 
 主题逻辑为，通过addSugar、addTea、addMilk等函数，对pwd变量当中存储的输入，进行加密。然后最后通过strainAndServe函数对加密之后的字符串进行判断。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/BIiI0dintZmH8YJYAwSdOA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/BIiI0dintZmH8YJYAwSdOA.png)
 
 提醒一下，pwd变量是存放在bss段中的public变量。所以其他函数可以直接访问并且进行修改。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/Xg0p-FohQCyu7C6rWFfqWQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/Xg0p-FohQCyu7C6rWFfqWQ.png)
 
 我们一个一个来看，首先是addSugar。
 
@@ -145,7 +143,7 @@ shellctf{C0ooooK13_W17h_c0ooorr3c7_Parr4m37er...}
 strcpy(pwd, v2);
 ```
 
-这个 & 按位与 的操作，他是把两个整数以二进制的形式进行操作的。所以  i&1 只有两种结果 1 0。 当i&1=1时，说明 i 的二进制表示最后一位为1  也就是 i 为奇数。 同理，i & 1=0 时，说明 i 为偶数。
+这个 & 按位与 的操作，他是把两个整数以二进制的形式进行操作的。所以 i&1 只有两种结果 1 0。 当i&1=1时，说明 i 的二进制表示最后一位为1 也就是 i 为奇数。 同理，i & 1=0 时，说明 i 为偶数。
 
 那么我们也不难看出，本函数时把 pwd 变为了 奇数位字符串 + 偶数位字符串。
 
@@ -209,7 +207,7 @@ strcpy(pwd, v2);
 
 基于我们的分析，**s = 50gYhugow~34i可以确定。但 v14 的长度是不确定的。可以是R;crc75，也可以是R;crc75i，也可以是R;crc75ihl`c。所以，dest的长度就是不确定的了。那么产生出来的pwd 也就是不同的。 而我只考虑了 v14 = R;crc75 的情况，解出来的pwd 不符合shellctf的格式。**
 
-解密函数如下，值得注意的是，int(3 \* (i / 2)) 和  (3 \\* int(i / 2)) 在 python里面得到的结果是不一样的。 譬如 i = 3 的时候， 前者的结果为 4 ； 后者的结果为 3 。**这一点需要根据实际情况来进行判断。
+解密函数如下，值得注意的是，int(3 \* (i / 2)) 和 (3 \\\* int(i / 2)) 在 python里面得到的结果是不一样的。 譬如 i = 3 的时候， 前者的结果为 4 ； 后者的结果为 3 。\*\*这一点需要根据实际情况来进行判断。
 
 ```
 s_0 = "R;crc75ihl`cNYe`]m%50gYhugow~34i"
@@ -243,7 +241,7 @@ for j in range(6,18):
 
 最终得到符合格式的flag.
 
-![img](/static/images/SHELL-CTF-2022-Writeup/144iQVuZvnNIhIxUlgnxxw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/144iQVuZvnNIhIxUlgnxxw.png)
 
 ### **one**
 
@@ -262,15 +260,15 @@ for j in range(6,18):
   s[bit_length + 48] = 0;
 ```
 
-![img](/static/images/SHELL-CTF-2022-Writeup/QoKTUsHtsRB0PUt-ks7MiQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/QoKTUsHtsRB0PUt-ks7MiQ.png)
 
 接着是第二个，以上一步算出来的二进制字符串为基础，每次循环取**不同长度once_bit_length(2->3->0->1**)的字符，并将通过字符串比较的方式，转换新字符(a-b \c-f \ 1-8 \ 9)，存储于v22。
 
-**once_bit_length** 是从2 开始的。  onece_bit_length = (onece_bit_length + 1) % 4; 刚好 是 2-3-0-1的循环。
+**once_bit_length** 是从2 开始的。 onece_bit_length = (onece_bit_length + 1) % 4; 刚好 是 2-3-0-1的循环。
 
 **当once_bit_length = 2 时，v22中对应的字符为 c - e**
 
-当 **once_bit_length  = 3时， v22中对应的字符为 1- 8**
+当 **once_bit_length = 3时， v22中对应的字符为 1- 8**
 
 当 **once_bit_length = 0 时， v22中对应的字符为 9**
 
@@ -278,7 +276,7 @@ for j in range(6,18):
 
 就这样一直循环，直到取完所有的二进制字符串。（在第一步中求出来的）。 通过观察，我们也可以看出来， v22的规律， 就是 (**字母+数字) +( 9+字母) 这样的循环，方便我们后续的解密操作。**
 
-**这里依旧有个需要注意的地方，我们每次循环只能取 6个字符，但是第一步求出来的二进制字符串是8的倍数，因为一个char类型刚好对应于8 bit， 解出来的字符串就刚好是  8 个 01这样的字符串。 不过，我们不用担心，因为这样的误差最多影响最后一个字符。而通过flag的格式我们已经知道最后一个字符就是 }**
+**这里依旧有个需要注意的地方，我们每次循环只能取 6个字符，但是第一步求出来的二进制字符串是8的倍数，因为一个char类型刚好对应于8 bit， 解出来的字符串就刚好是 8 个 01这样的字符串。 不过，我们不用担心，因为这样的误差最多影响最后一个字符。而通过flag的格式我们已经知道最后一个字符就是 }**
 
 ```
   while ( v9 < bit_length )
@@ -365,7 +363,7 @@ for j in range(6,18):
   }
 ```
 
-接下来是第三个，以第二步得到的v22字符串为基础，每两个v22中的字符 决定 一个 v18中的字符。注意观察，实际上v15字符 8bit 中，**前4bit 刚好是 (char\*)(v22+l) - "a" 或者 (char\*)(v22+l) - "0"**。**后4bit 刚好是**  **(char\*)(v22+l+1) - "a" 或者 (char\*)(v22+l+1) - "0"**  
+接下来是第三个，以第二步得到的v22字符串为基础，每两个v22中的字符 决定 一个 v18中的字符。注意观察，实际上v15字符 8bit 中，**前4bit 刚好是 (char\*)(v22+l) - "a" 或者 (char\*)(v22+l) - "0"**。**后4bit 刚好是** **(char\*)(v22+l+1) - "a" 或者 (char\*)(v22+l+1) - "0"**
 
 **这样的话，我们就可以通过v15字符中的 8bit 逆向推出 v22 中蕴含的字符。**
 
@@ -396,9 +394,9 @@ for j in range(6,18):
   }
 ```
 
-就是  qmemcpy(v18, "R", 0x174uLL); 这一句程序困扰了我很长时间，因为按照字面理解 "R" 字符串就只有一个R, 为什么后面的size 参数却有 0x174 这么大呢。原来，在程序的实际执行过程中, "R" 这个位置的参数，只是字符串的首地址。后面还有其他的字符呢。
+就是 qmemcpy(v18, "R", 0x174uLL); 这一句程序困扰了我很长时间，因为按照字面理解 "R" 字符串就只有一个R, 为什么后面的size 参数却有 0x174 这么大呢。原来，在程序的实际执行过程中, "R" 这个位置的参数，只是字符串的首地址。后面还有其他的字符呢。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/YqcyrY20BWhBMnpo54CbKQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/YqcyrY20BWhBMnpo54CbKQ.png)
 
 了解了以上的过程，我们的思路明晰了。还是根据最后的这些字符，一步一步的逆向解析。为了方便起见，我把这些部分字符保存为了二进制文件，因为一个一个的打实在是太费劲了！
 
@@ -417,7 +415,7 @@ while True:
     a = fopen.read(1)
     if a == b: # 不要0x00字节，我们只要最前面的 1个字节。
         continue
-    if not a:    
+    if not a:
         break
     R.append(struct.unpack('>B', a)[0])
 
@@ -503,7 +501,7 @@ print(decode(target_5))
 
 得到最终flag。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/4ThtXaQi4KDldUdirQjfNw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/4ThtXaQi4KDldUdirQjfNw.png)
 
 ## **Forensics**
 
@@ -511,7 +509,7 @@ print(decode(target_5))
 
 查看音频的频谱图即可。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/eNkisZfrDGbVzAlEcZUvQw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/eNkisZfrDGbVzAlEcZUvQw.png)
 
 ```
 shell{y0u_g07_7h3_f1ag}
@@ -545,37 +543,37 @@ with open('decodedFile.png', 'wb') as png:
     png.write(decryptedFile)
 ```
 
-   ![img](/static/images/SHELL-CTF-2022-Writeup/xEoZGJzjkZw3TpXDo-d9Cw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/xEoZGJzjkZw3TpXDo-d9Cw.png)
 
 ### **Heaven**
 
 题目提示："I was in the seventh heaven painted red green and blue"。
 
-按照题目提示，“seventh heaven“很容易联想到图片的LSB加密。图片中每个像素点由由RGB三色构成，而每个颜色的深浅可以由0-255(8位二进制数)构成。因此，按照题目描述我们可以提取每个像素点的RGB三色中的第7位，然后重新组合成有意义的字符串。                 ![img](/static/images/SHELL-CTF-2022-Writeup/vhy9irXWIdnm26RRTmYj-A.png)                         ![img](/static/images/SHELL-CTF-2022-Writeup/vQkygXsPty1uNcvGmutTmg.png)        
+按照题目提示，“seventh heaven“很容易联想到图片的LSB加密。图片中每个像素点由由RGB三色构成，而每个颜色的深浅可以由0-255(8位二进制数)构成。因此，按照题目描述我们可以提取每个像素点的RGB三色中的第7位，然后重新组合成有意义的字符串。 ![img](/static/images/SHELL-CTF-2022-Writeup/vhy9irXWIdnm26RRTmYj-A.png) ![img](/static/images/SHELL-CTF-2022-Writeup/vQkygXsPty1uNcvGmutTmg.png)
 
 ### **Hidden File**
 
 查看本题目中给出的jpg文件，其中给出了一个密码为shell。因此，jpg是采用了某种需要使用密码加密的算法，比如stegohide, OpenStego, Stegpy, Outguess, Jphide等。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/5BBvBSo8ZJnCkGX_8cNbmw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/5BBvBSo8ZJnCkGX_8cNbmw.png)
 
 使用stegohide解密果然存在加密的文件夹。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/VoCIi-G0F3mrXISjvA-oVw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/VoCIi-G0F3mrXISjvA-oVw.png)
 
 所给的文件夹含有三个文件：flag.zip, se3cretf1l3.pdf，something.jpg. 第一个zip显然被加密过，第三个jpg中的二维码为钓鱼链接，是YouTube的一个视频。因此，密码存在第二个文件pdf中。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/E1yIPhcDwPrGrVbaBualuA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/E1yIPhcDwPrGrVbaBualuA.png)
 
 分析PDF文件，一开始想从梳理PDFObject来做，网上有很多现成的软件，比如(Polyfile)[https://github.com/trailofbits/polyfile]，可以生成html可互动的pdf分析，如下所示。但是很遗憾并没有找到有用的信息。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/YiAhqlDkbPpWChNuMzj0Xg.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/YiAhqlDkbPpWChNuMzj0Xg.png)
 
 之后，在网上找到了提取PDF的工具，提取后发现了zip的解密密码。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/lPuHsI3lyosiD4NTWqkjQg.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/lPuHsI3lyosiD4NTWqkjQg.png)
 
-解压后拿到flag.       ![img](/static/images/SHELL-CTF-2022-Writeup/zUoZG81-w7IxsYfL8nVbYg.png)        
+解压后拿到flag. ![img](/static/images/SHELL-CTF-2022-Writeup/zUoZG81-w7IxsYfL8nVbYg.png)
 
 ### **Go Deep!**
 
@@ -583,9 +581,9 @@ Our one of the agent gave us this file and said "Go Deep!"
 
 同样，本题目中所给出的音频从hex中可以得到一个密码。猜想是采用了某种需要密码的音频加密方法，再加上题目提示中的Go Deep，所以直接使用DeepSound来进行解密。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/1bRX1dFI2HUTNwEh4pvF4w.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/1bRX1dFI2HUTNwEh4pvF4w.png)
 
-![img](/static/images/SHELL-CTF-2022-Writeup/hZXVUBUv5uV3XXRx4LEJXQ.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/hZXVUBUv5uV3XXRx4LEJXQ.png)
 
 文件中存在 flag.
 
@@ -603,11 +601,11 @@ SHELL{y0u_w3r3_7h1nk1ng_R3ally_D33p}
 ----. ----. ----. / -.... -.... -.... / ---.. ---.. / ..--- ..--- ..--- / ..--- / -.... -.... / --... --... --... / ...-- ...-- / ..--- / ...-- / -.... / ----. ----. ----. / --... --... --... --... / -.... / --... --... --... --...
 ```
 
-![img](/static/images/SHELL-CTF-2022-Writeup/cj-Zt8UbtjsBTX6GWrbvaA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/cj-Zt8UbtjsBTX6GWrbvaA.png)
 
 对着密码思考许久之后，结合题目背景(Typing and SMS)，猜想会不会与手机按键有关。果然解密得到答案。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/2974TJ5QOcR21ZnOEOEzVw.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/2974TJ5QOcR21ZnOEOEzVw.png)
 
 ### **MALBORNE**
 
@@ -615,7 +613,7 @@ SHELL{y0u_w3r3_7h1nk1ng_R3ally_D33p}
 
 因此我们只需对该语言进行编译运行即可，[在线平台][https://malbolge.doleczek.pl/]。执行效果如下，得到 flag。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/IpUTmya21tW7chh9U6ROBA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/IpUTmya21tW7chh9U6ROBA.png)
 
 ```
 SHELL{m41b01g3_15_my_n3w_l4ngu4g3}
@@ -625,13 +623,11 @@ SHELL{m41b01g3_15_my_n3w_l4ngu4g3}
 
 题目为经典异或加密题目。题目提供了两个文件，一个加密后的密文，一个是加密过程代码文件。
 
-![img](/static/images/SHELL-CTF-2022-Writeup/S7MTE1GsGb_aAWePbBdiLA.png)        
+![img](/static/images/SHELL-CTF-2022-Writeup/S7MTE1GsGb_aAWePbBdiLA.png)
 
 根据代码可知四个关键点，（1）key均为字母；（2）key共有9个字母；（3）加密时模9，即循环使用key异或；（4）知道 FLAG 格式为`SHELL{}`。因此可以根据这些来破解，首先根据 `SHELL{` 获得 key的前 6 个字符为 XORISC，进而对后面三个字母进行爆破。遍历字母表，在经过查看之后，发现当 key = XORISCOOL 时，FLAG 具有较好的可读性，便获得了 flag。
 
-​                 ![img](/static/images/SHELL-CTF-2022-Writeup/3kCh3vmQvvhcyjggKQUKTw.png)        
-
-
+​ ![img](/static/images/SHELL-CTF-2022-Writeup/3kCh3vmQvvhcyjggKQUKTw.png)
 
 ```
 SHELL{X0R_1S_R3VeR51BL3}
@@ -639,11 +635,11 @@ SHELL{X0R_1S_R3VeR51BL3}
 
 ### **Feel Me**
 
-该题目为视频处理 + 常规解密题目。题目提供了一个 MP4 文件，内容为 3 * 2 的六位数字（均为0，1）的快速变化。
+该题目为视频处理 + 常规解密题目。题目提供了一个 MP4 文件，内容为 3 \* 2 的六位数字（均为0，1）的快速变化。
 
 我们首先需要将视频进行慢放，这里我使用了 [PotPlayer-win][https://potplayer.daum.net/] 对视频进行逐帧查看，并获得了如下序列。
 
-​                 ![img](/static/images/SHELL-CTF-2022-Writeup/6ATioiuKLvcuia4Qwk1VWg.png)        
+​ ![img](/static/images/SHELL-CTF-2022-Writeup/6ATioiuKLvcuia4Qwk1VWg.png)
 
 结合题目名称，猜测为盲文解密，但是查看后发现盲文为 8 位数字，便放弃了，后面感觉还是盲文解密，查询后发现 8 位为拓展后的，原始版本为6位，解密后获得 SHEL YOUCANSEME SHEL，近在咫尺，并进行了一定的猜测，由于SE和SEE在查看变化是可能无法辨别E十分发生重复，但是为了使 FLAG 更加有寓意，便将其转为SEE，最终猜测出 Flag。
 
@@ -662,9 +658,3 @@ SHELL{YOUCANSEEME}
 ```
 SHELLCTF{W4kandA_F0rev3r}
 ```
-
-
-
-
-
- 

@@ -1,14 +1,12 @@
 ---
-title: "hack.lu 2023 Writeup"
-date: "2023-10-15"
+title: 'hack.lu 2023 Writeup'
+date: '2023-10-15'
 tags: ['Writeup', 'Web']
 draft: false
-summary: "This writeup contains an interesting mXSS challenge, named awesome-note-2,  from the hack.lu this year."
+summary: 'This writeup contains an interesting mXSS challenge, named awesome-note-2,  from the hack.lu this year.'
 ---
 
-This writeup contains an interesting mXSS challenge, named awesome-note-2,  from the hack.lu this year.
-
-
+This writeup contains an interesting mXSS challenge, named awesome-note-2, from the hack.lu this year.
 
 ## Web
 
@@ -20,8 +18,8 @@ https://docs.rs/ammonia/latest/ammonia/struct.Builder.html
 
 The sanitization rules applied on the backend were discerned as:
 
-+ only allow h1, p, div tag
-+ only allow attribute with "hx-" prefix
+- only allow h1, p, div tag
+- only allow attribute with "hx-" prefix
 
 ```
 let safe = ammonia::Builder::new()
@@ -50,8 +48,6 @@ The malicious note, when reported and consequently viewed by the admin, exposed 
 
 ![awesome-notes-1-flag](/static/images/hack-lu-2023-Writeup/awesome-notes-1-flag-7419992.png)
 
-
-
 ### awesome-notes-2
 
 In this stage of the challenge, while the underlying mechanics were similar, the sanitizer rules posed a different puzzle.
@@ -60,9 +56,9 @@ In this stage of the challenge, while the underlying mechanics were similar, the
 
 The following content is my understand of how `ammonia` works. At its core, `ammonia` parses an HTML string and then cleans or sanitizes the parsed tree based on specified whitelist/blacklist rules:
 
-+ Whitelist tags: A set of default tags are whitelisted in ammonia. Additional tags can be included using `add_tags` or `tags`.
-+ Blacklist tags(clean-content tags): The contents of tags in this category will be completely removed from the output. Tags can be appended to this list with `add_clean_content_tags` or `clean_content_tags`.
-+ Notably, a tag can only belong to one of these lists.
+- Whitelist tags: A set of default tags are whitelisted in ammonia. Additional tags can be included using `add_tags` or `tags`.
+- Blacklist tags(clean-content tags): The contents of tags in this category will be completely removed from the output. Tags can be appended to this list with `add_clean_content_tags` or `clean_content_tags`.
+- Notably, a tag can only belong to one of these lists.
 
 In the following, the application allows a list of math related tags specified in `TAGs` and `style` tag. Then, it remove the `style` tag from the blacklist to avoid any panic.
 
@@ -106,7 +102,7 @@ Given this unconventional structure, `ammonia` sanitizes the payload by strippin
 // After sanitizer
 <math><semantics><annotation-xml><style><img src=x onerror="alert(1)">
           </style></annotation-xml></semantics></math>
-          
+
 // After DOM parser patching (broswer)
 <math><semantics><annotation-xml><style></style></annotation-xml></semantics></math><img src="x" onerror="alert(1)">
 ```
@@ -129,7 +125,7 @@ Here is how the browser treat the sanitized payload 2:
 
 ![awesome-notes-2-mxss](/static/images/hack-lu-2023-Writeup/awesome-notes-2-py2-7419992.png)
 
-There are more mXSS payload from the DOMPurify repository unit test cases: 
+There are more mXSS payload from the DOMPurify repository unit test cases:
 
 https://github.com/cure53/DOMPurify/blob/7e6a7ee8b710ee669dafa2231e98a50ee06d3cef/test/fixtures/expect.mjs#L892
 
@@ -140,4 +136,3 @@ Get the flag.
 ```
 flag{th1s_ch4ll3ng3_w4s_n3rd3d_f0r_y0ur_pl34sur3}
 ```
-

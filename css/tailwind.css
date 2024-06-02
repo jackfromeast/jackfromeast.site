@@ -64,9 +64,10 @@ input:-webkit-autofill:focus {
 
 @font-face {
   font-family: 'Terminal Grotesque';
-  src: url('/static/fonts/terminal-grotesque-webfont.woff2') format('woff2'),
-       url('/static/fonts/terminal-grotesque-webfont.woff') format('woff'),
-       url('/static/fonts/terminal-grotesque-webfont.ttf') format('truetype');
+  src:
+    url('/static/fonts/terminal-grotesque-webfont.woff2') format('woff2'),
+    url('/static/fonts/terminal-grotesque-webfont.woff') format('woff'),
+    url('/static/fonts/terminal-grotesque-webfont.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
 }

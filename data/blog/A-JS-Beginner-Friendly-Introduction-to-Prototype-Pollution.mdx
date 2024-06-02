@@ -1,15 +1,12 @@
 ---
-title: "A JS Beginner-Friendly Introduction to Prototype Pollution"
-date: "2022-09-22"
+title: 'A JS Beginner-Friendly Introduction to Prototype Pollution'
+date: '2022-09-22'
 tags: ['Web']
 draft: false
-summary: "This blog aims to summarize everything about the javascript-specific vulnerability - prototype pollution: necessary knowledge about javascript, what is the prototype and prototype chain, how to exploit the prototype pollution vulnerability and several CTF challenges related to the prototype pollution which might help in understanding all the stuff."
+summary: 'This blog aims to summarize everything about the javascript-specific vulnerability - prototype pollution: necessary knowledge about javascript, what is the prototype and prototype chain, how to exploit the prototype pollution vulnerability and several CTF challenges related to the prototype pollution which might help in understanding all the stuff.'
 ---
 
-
 This blog aims to summarize everything about the javascript-specific vulnerability - prototype pollution: necessary knowledge about javascript, what is the prototype and prototype chain, how to exploit the prototype pollution vulnerability and several CTF challenges related to the prototype pollution which might help in understanding all the stuff.
-
-
 
 ### 1 Something about JavaScript
 
@@ -40,7 +37,7 @@ Usually, we see javascript on both client-side and server-side. The client-side 
 **var, let, and const**
 
 - `let` – is a modern variable declaration.
-- `var` – is an old-school variable declaration. 
+- `var` – is an old-school variable declaration.
 - `const` – is like `let`, but the value of the variable can’t be changed, as for const value.
 
 `let` and `var` basically do the same things, so use let instead.
@@ -50,15 +47,15 @@ Usually, we see javascript on both client-side and server-side. The client-side 
 There are eight basic data types in JavaScript.
 
 - Seven primitive data types (primitive stands for their values contain only a single thing (be it a string or a number or whatever):
-    - `number` for numbers of any kind: integer or floating-point, integers are limited by `±(253-1)`.
-    - `bigint` for integer numbers of arbitrary length.
-    - `string` for strings. A string may have zero or more characters, there’s no separate single-character type.
-    - `boolean` for `true`/`false`.
-    - `null` for unknown values – a standalone type that has a single value `null`.
-    - `undefined` for unassigned values – a standalone type that has a single value `undefined`.
-    - `symbol` used to create unique identifiers for objects
+  - `number` for numbers of any kind: integer or floating-point, integers are limited by `±(253-1)`.
+  - `bigint` for integer numbers of arbitrary length.
+  - `string` for strings. A string may have zero or more characters, there’s no separate single-character type.
+  - `boolean` for `true`/`false`.
+  - `null` for unknown values – a standalone type that has a single value `null`.
+  - `undefined` for unassigned values – a standalone type that has a single value `undefined`.
+  - `symbol` used to create unique identifiers for objects
 - And one non-primitive data type:
-    - `object` for more complex data structures, which we will cover later.
+  - `object` for more complex data structures, which we will cover later.
 
 #### 1.3 javascript functions
 
@@ -66,44 +63,44 @@ There are three ways to create a function in JavaScript:
 
 1. Function Declaration: the function in the main code flow
 
-    ```javascript
-    function sum(a, b) {
-      let result = a + b;
-    
-      return result;
-    }
-    ```
+   ```javascript
+   function sum(a, b) {
+     let result = a + b
+
+     return result
+   }
+   ```
 
 2. Function Expression: the function in the context of an expression
 
-    ```javascript
-    let sum = function(a, b) {
-      let result = a + b;
-    
-      return result;
-    };
-    ```
+   ```javascript
+   let sum = function (a, b) {
+     let result = a + b
+
+     return result
+   }
+   ```
 
 3. Arrow functions:
 
-    ```javascript
-    // expression on the right side
-    let sum = (a, b) => a + b;
-    
-    // or multi-line syntax with { ... }, need return here:
-    let sum = (a, b) => {
-      // ...
-      return a + b;
-    }
-    
-    // without arguments
-    let sayHi = () => alert("Hello");
-    
-    // with a single argument
-    let double = n => n * 2;
-    ```
+   ```javascript
+   // expression on the right side
+   let sum = (a, b) => a + b
 
-Besides the coding way, the more subtle difference is *when* a function is created by the JavaScript engine.
+   // or multi-line syntax with { ... }, need return here:
+   let sum = (a, b) => {
+     // ...
+     return a + b
+   }
+
+   // without arguments
+   let sayHi = () => alert('Hello')
+
+   // with a single argument
+   let double = (n) => n * 2
+   ```
+
+Besides the coding way, the more subtle difference is _when_ a function is created by the JavaScript engine.
 
 A Function Expression is created when the execution reaches it and is usable only from that moment. Once the execution flow passes to the right side of the assignment `let sum = function…` – here we go, the function is created and can be used (assigned, called, etc. ) from now on.
 
@@ -121,10 +118,10 @@ We can even print out that value using `alert`:
 
 ```javascript
 function sayHi() {
-  alert( "Hello" );
+  alert('Hello')
 }
 
-alert( sayHi ); // shows the function code
+alert(sayHi) // shows the function code
 ```
 
 Please note that the last line does not run the function because there are no parentheses after `sayHi`. There are programming languages where any mention of a function name causes its execution, but JavaScript is not like that.
@@ -138,29 +135,30 @@ But it’s still a value. So we can work with it like with other kinds of values
 We can copy a function to another variable:
 
 ```javascript
-function sayHi() {   // (1) create
-  alert( "Hello" );
+function sayHi() {
+  // (1) create
+  alert('Hello')
 }
 
-let func = sayHi;    // (2) copy
+let func = sayHi // (2) copy
 
-func(); // Hello     // (3) run the copy (it works)!
-sayHi(); // Hello    //     this still works too (why wouldn't it)
+func() // Hello     // (3) run the copy (it works)!
+sayHi() // Hello    //     this still works too (why wouldn't it)
 ```
 
 Here’s what happens above in detail:
 
 1. The Function Declaration `(1)` creates the function and puts it into the variable named `sayHi`.
-2. Line `(2)` copies it into the variable `func`. Please note again: there are no parentheses after `sayHi`. If there were, then `func = sayHi()` would write *the result of the call* `sayHi()` into `func`, not *the function* `sayHi` itself.
+2. Line `(2)` copies it into the variable `func`. Please note again: there are no parentheses after `sayHi`. If there were, then `func = sayHi()` would write _the result of the call_ `sayHi()` into `func`, not _the function_ `sayHi` itself.
 3. Now the function can be called as both `sayHi()` and `func()`.
 
 #### 1.4 javascript objects
 
 **The interesting Object**
 
-*Objects* are used to store keyed collections of various data and more complex entities. The reason why we are always talking about that the javascript language is the most dynamic language can be shown as follows.
+_Objects_ are used to store keyed collections of various data and more complex entities. The reason why we are always talking about that the javascript language is the most dynamic language can be shown as follows.
 
-First of all, let's define an object. It should be noted that the object stores *properties* in the form of key-value pairs, and the keys must be strings or symbols and the values can be of any type.
+First of all, let's define an object. It should be noted that the object stores _properties_ in the form of key-value pairs, and the keys must be strings or symbols and the values can be of any type.
 
 ```
 let user = {     // an object
@@ -220,7 +218,7 @@ let bag = {};
 bag[fruit] = 5;
 ```
 
-Above all, we can understand that the most important data type, Object, is so dynamic and flexible together with variables. 
+Above all, we can understand that the most important data type, Object, is so dynamic and flexible together with variables.
 
 **Object references and copying**
 
@@ -250,7 +248,7 @@ user2.name = "Jack"
 console.log(user.name) // print Jack
 ```
 
-For the advanced data type, for example objects, we can use `==` or `===` to compare their reference.(However, for the primitive variables, `==` is used to compare the values between different data types,  and `===` is used to compare the values between the same data types.)
+For the advanced data type, for example objects, we can use `==` or `===` to compare their reference.(However, for the primitive variables, `==` is used to compare the values between different data types, and `===` is used to compare the values between the same data types.)
 
 ```
 let user = {}
@@ -265,7 +263,7 @@ console.log(user === user3) // True
 
 **if you consider `this` keyword as a dynamic pointer to an object, it should be easy to understand the following part.**
 
-A function that is a property of an object is called its *method*. 
+A function that is a property of an object is called its _method_.
 
 ```
 let user = {
@@ -277,7 +275,7 @@ user.sayHi = function() {
   alert("Hello!");
 };
 
-user.sayHi(); 
+user.sayHi();
 ```
 
 Also, we can define a function in an OPP(Object-oriented programming) way.
@@ -320,14 +318,14 @@ One more thing to note is that `this` is not bound. The value of `this` is evalu
 
 **Symbols**
 
-By specification, only two primitive types may serve as object property keys: string, or symbol type. A *symbol* represents a unique identifier.
+By specification, only two primitive types may serve as object property keys: string, or symbol type. A _symbol_ represents a unique identifier.
 
 A value of this type can be created using `Symbol()`:
 
 ```javascript
-let id = Symbol();
+let id = Symbol()
 // id is a symbol with the description "id"
-let id = Symbol("id");
+let id = Symbol('id')
 ```
 
 Symbols are guaranteed to be unique. Even if we create many symbols with exactly the same description, they are different values. The description is just a label that doesn’t affect anything.
@@ -530,7 +528,7 @@ Actually, we define an object like the animal above, the Javascript internally u
 
 ![2-4-2](/static/images/A-JS-Beginner-Friendly-Introduction-to-Prototype-Pollution/2-4-2.png)
 
-This is how Javascript works. It is common for us to define an array by using `var ary = new Array()`. And then, we can use a lot of array methods like `ary.length` to employ the variable in our code.  By specification, `Array.prototype` provides those methods. We can actually get an actual picture as follows:
+This is how Javascript works. It is common for us to define an array by using `var ary = new Array()`. And then, we can use a lot of array methods like `ary.length` to employ the variable in our code. By specification, `Array.prototype` provides those methods. We can actually get an actual picture as follows:
 
 ![2-4-3](/static/images/A-JS-Beginner-Friendly-Introduction-to-Prototype-Pollution/2-4-3.png)
 
@@ -550,11 +548,9 @@ And built-in prototypes can be modified or populated with new methods, which mig
 
 - Object.create(proto, [descriptors\]): creates an empty object with given `proto` as `[[Prototype]]` and optional property descriptors. However, the descriptors can be used to set properties.
 
-
-
 ### 3 Prototype Pollution Vulnerability
 
-I am sorry for paving a lot of stuff of javascript to get here. 
+I am sorry for paving a lot of stuff of javascript to get here.
 
 When we talk about a new kind of vulnerability, there are two questions that must be clear:
 
@@ -563,7 +559,7 @@ When we talk about a new kind of vulnerability, there are two questions that mus
 
 For the first question, let's summarize the prototype of the Prototype Pollution Vulnerability.
 
-#### 3.1  the prototype of the Prototype Pollution Vulnerability
+#### 3.1 the prototype of the Prototype Pollution Vulnerability
 
 In a word, prototype pollution vulnerabilities occur in assignment statements where 1. `__proto__` shown on the left as the object's key (will be interpreted as the object's `__proto__` object) 2. try to assign value to its property (assign to object's `__proto__` object itself won't work).
 
@@ -577,28 +573,28 @@ target[key] = {'__proto__': {'toString': value}}; // won't work
 
 In practice, which operations would more likely cause a prototype pollution vulnerability?
 
-+ merge objects // from phith0n
-+ clone objects // from phith0n
-+ assign(), push(), insert(), extend(), ensureExists(), set(), ...
+- merge objects // from phith0n
+- clone objects // from phith0n
+- assign(), push(), insert(), extend(), ensureExists(), set(), ...
 
 ```javascript
 function merge(target, source) {
-    for (let key in source) {
-        if (key in source && key in target) {
-            merge(target[key], source[key])
-        } else {
-            target[key] = source[key]
-        }
+  for (let key in source) {
+    if (key in source && key in target) {
+      merge(target[key], source[key])
+    } else {
+      target[key] = source[key]
     }
+  }
 }
 
 function clone(obj) {
-    if (null == obj || "object" != typeof obj) return obj;
-    var copy = obj.constructor();
-    for (var attr in obj) {
-        if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr];
-    }
-    return copy;
+  if (null == obj || 'object' != typeof obj) return obj
+  var copy = obj.constructor()
+  for (var attr in obj) {
+    if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr]
+  }
+  return copy
 }
 ```
 
@@ -610,15 +606,12 @@ At least, prototype pollution vulnerability would lead to a DOS attack. However,
 
 I would like to find another time to summarize the cases about PP2RCE that I have come across.
 
-
-
 #### Reference
 
-+ https://javascript.info/getting-started
+- https://javascript.info/getting-started
 
-+ 一张图搞定JS原型&原型链: https://segmentfault.com/a/1190000021232132)
+- 一张图搞定JS原型&原型链: https://segmentfault.com/a/1190000021232132)
 
-+ P神的原型链污染漏洞：https://www.leavesongs.com/PENETRATION/javascript-prototype-pollution-attack.html#0x02-javascript
+- P神的原型链污染漏洞：https://www.leavesongs.com/PENETRATION/javascript-prototype-pollution-attack.html#0x02-javascript
 
-+ Nodejs与原型链入门CTF: https://www.anquanke.com/post/id/236182
-
+- Nodejs与原型链入门CTF: https://www.anquanke.com/post/id/236182

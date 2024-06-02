@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 import siteMetadata from '@/data/siteMetadata'
 import headerNavLinks from '@/data/headerNavLinks'
@@ -7,40 +7,39 @@ import Link from './Link'
 import MobileNav from './MobileNav'
 import ThemeSwitch from './ThemeSwitch'
 import SearchButton from './SearchButton'
-import { useEffect } from 'react';
-
+import { useEffect } from 'react'
 
 const Header = () => {
   useEffect(() => {
-    const textElement = document.getElementById('headerTitle');
-    const finalText = "jackfromeast's blog";
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let iterations = 0;
+    const textElement = document.getElementById('headerTitle')
+    const finalText = "jackfromeast's blog"
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let iterations = 0
 
     const animateText = () => {
-      if (textElement === null) return;
+      if (textElement === null) return
       if (iterations < finalText.length) {
-        let currentText = '';
+        let currentText = ''
         for (let i = 0; i < finalText.length; i++) {
           if (i < iterations) {
-            currentText += finalText[i];
+            currentText += finalText[i]
           } else {
-            currentText += characters.charAt(Math.floor(Math.random() * characters.length));
+            currentText += characters.charAt(Math.floor(Math.random() * characters.length))
           }
         }
-        textElement.textContent = currentText;
-        textElement.style.color = 'gray';
-        iterations++;
+        textElement.textContent = currentText
+        textElement.style.color = 'gray'
+        iterations++
       } else {
-        textElement.textContent = finalText;
-        textElement.style.color = 'white';
+        textElement.textContent = finalText
+        textElement.style.color = 'white'
       }
 
-      setTimeout(animateText, 70);
-    };
+      setTimeout(animateText, 70)
+    }
 
-    animateText();
-  }, []);
+    animateText()
+  }, [])
 
   return (
     <header className="flex items-center justify-between py-10">

@@ -1,26 +1,24 @@
 ---
-title: "JustCTF 2023 Writeup"
+title: 'JustCTF 2023 Writeup'
 tags: ['Writeup', 'Pwn']
 draft: false
-date: "2023-06-03"
-summary: "Over the weekend, I made headway with several pwn challenges in Just CTF. One particularly instructive challenge required us to exploit the sqlite3 database using the command-line interface. Confronting and pwning a complex, large binary has always been a struggle for me. To learn from these challenges, I compiled several solutions, specifically focusing on identifying the ideal starting points for such tasks."
+date: '2023-06-03'
+summary: 'Over the weekend, I made headway with several pwn challenges in Just CTF. One particularly instructive challenge required us to exploit the sqlite3 database using the command-line interface. Confronting and pwning a complex, large binary has always been a struggle for me. To learn from these challenges, I compiled several solutions, specifically focusing on identifying the ideal starting points for such tasks.'
 ---
 
 Over the weekend, I made headway with several pwn challenges in Just CTF. One particularly instructive challenge required us to exploit the sqlite3 database using the command-line interface. Confronting and pwning a complex, large binary has always been a struggle for me. To learn from these challenges, I compiled several solutions, specifically focusing on identifying the ideal starting points for such tasks.
-
-
 
 ## Pwn
 
 ### Welcome in my house
 
-In this challenge, we are presented with a scenario that involves several malloc operations, each followed by heap overflows. However, we are not allowed to free any chunks. Our primary objective is to overwrite the content of a pre-malloced chunk situated at a lower address. Together with the provided glibc library is in 2.27 version, I am pretty sure that this challenge requires using an old but dominant heap exploitation: **house of force**,  which has been patched in 2.29. 
+In this challenge, we are presented with a scenario that involves several malloc operations, each followed by heap overflows. However, we are not allowed to free any chunks. Our primary objective is to overwrite the content of a pre-malloced chunk situated at a lower address. Together with the provided glibc library is in 2.27 version, I am pretty sure that this challenge requires using an old but dominant heap exploitation: **house of force**, which has been patched in 2.29.
 
 **house of force**
 
 Here is the PoC to illustrate the core concept of this technique:
 
->  https://github.com/shellphish/how2heap/blob/master/glibc_2.27/house_of_force.c
+> https://github.com/shellphish/how2heap/blob/master/glibc_2.27/house_of_force.c
 
 ```
 sh = start()
@@ -203,7 +201,7 @@ if __name__ == "__main__":
     # arbitrary_addr_read(0x0, True)
     glibc_base, free_hook_addr, one_gadget_addr = leak_glibc()
     arbitrary_addr_write(free_hook_addr, p64(one_gadget_addr))
-    
+
     pause()
     free(b"c", free_idx) # this call the free hook
 
@@ -215,9 +213,9 @@ if __name__ == "__main__":
 
 ### Pyplugins
 
-This challenge allows to download the python code from the internet and run locally after several validation as follows. 
+This challenge allows to download the python code from the internet and run locally after several validation as follows.
 
-1. It only allows requesting the code from three trust domains: `blackhat.day`, `veganrecipes.soy`, and `fizzbuzz.foo`. 
+1. It only allows requesting the code from three trust domains: `blackhat.day`, `veganrecipes.soy`, and `fizzbuzz.foo`.
 
 2. It will compile our provided code into opcodes and check whether there are invalid opcodes(it only allows: "LOAD_CONST", "STORE_NAME", "RETURN_VALUE").
 
@@ -257,7 +255,7 @@ ALLOWED_OPCODES = ["LOAD_CONST", "STORE_NAME", "RETURN_VALUE"]
 
 **subdomain hijacking**
 
-Here are several good material to hijack the subdomain of the domain hosting on the Github pages. 
+Here are several good material to hijack the subdomain of the domain hosting on the Github pages.
 
 > https://github.com/carlospolop/hacktricks/blob/master/pentesting-web/domain-subdomain-takeover.md
 >
@@ -337,11 +335,11 @@ int sqlite3_load_extension(
 );
 ```
 
->This interface loads an SQLite extension library from the named file.
+> This interface loads an SQLite extension library from the named file.
 >
->The sqlite3_load_extension() interface attempts to load an [SQLite extension](https://www.sqlite.org/loadext.html) library contained in the file zFile. If the file cannot be loaded directly, attempts are made to load with various operating-system specific extensions added. So for example, if "samplelib" cannot be loaded, then names like "samplelib.so" or "samplelib.dylib" or "samplelib.dll" might be tried also.
+> The sqlite3_load_extension() interface attempts to load an [SQLite extension](https://www.sqlite.org/loadext.html) library contained in the file zFile. If the file cannot be loaded directly, attempts are made to load with various operating-system specific extensions added. So for example, if "samplelib" cannot be loaded, then names like "samplelib.so" or "samplelib.dylib" or "samplelib.dll" might be tried also.
 >
->The entry point is zProc. zProc may be 0, in which case SQLite will try to come up with an entry point name on its own. It first tries "sqlite3_extension_init". If that does not work, it constructs a name "sqlite3_X_init" where the X is consists of the lower-case equivalent of all ASCII alphabetic characters in the filename from the last "/" to the first following "." and omitting any initial "lib". The sqlite3_load_extension() interface returns [SQLITE_OK](https://www.sqlite.org/rescode.html#ok) on success and [SQLITE_ERROR](https://www.sqlite.org/rescode.html#error) if something goes wrong. If an error occurs and pzErrMsg is not 0, then the [sqlite3_load_extension()](https://www.sqlite.org/c3ref/load_extension.html) interface shall attempt to fill *pzErrMsg with error message text stored in memory obtained from [sqlite3_malloc()](https://www.sqlite.org/c3ref/free.html). The calling function should free this memory by calling [sqlite3_free()](https://www.sqlite.org/c3ref/free.html).
+> The entry point is zProc. zProc may be 0, in which case SQLite will try to come up with an entry point name on its own. It first tries "sqlite3_extension_init". If that does not work, it constructs a name "sqlite3_X_init" where the X is consists of the lower-case equivalent of all ASCII alphabetic characters in the filename from the last "/" to the first following "." and omitting any initial "lib". The sqlite3_load_extension() interface returns [SQLITE_OK](https://www.sqlite.org/rescode.html#ok) on success and [SQLITE_ERROR](https://www.sqlite.org/rescode.html#error) if something goes wrong. If an error occurs and pzErrMsg is not 0, then the [sqlite3_load_extension()](https://www.sqlite.org/c3ref/load_extension.html) interface shall attempt to fill \*pzErrMsg with error message text stored in memory obtained from [sqlite3_malloc()](https://www.sqlite.org/c3ref/free.html). The calling function should free this memory by calling [sqlite3_free()](https://www.sqlite.org/c3ref/free.html).
 
 Their description would lead us thinking that it is trying to execute the entry function which is under user controlled.
 
@@ -376,7 +374,7 @@ So, our solution would look like this:
 
 The only problem is that we need overwrite the address `db` with the content `db-0x48+0x10` which is a heap address. Since we can only leak the elf loading address. We need to brute force the heap address and the when chance is 1/2000.
 
-The core exploit lines are: 
+The core exploit lines are:
 
 ```
 p.sendline(b"select Load_extension('/lib/x86_64-linux-gnu/libc.so.6','gets');")

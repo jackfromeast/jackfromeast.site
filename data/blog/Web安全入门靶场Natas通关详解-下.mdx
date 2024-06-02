@@ -1,16 +1,14 @@
 ---
-title: "Web安全入门靶场Natas通关详解(下)"
-date: "2022-06-08"
+title: 'Web安全入门靶场Natas通关详解(下)'
+date: '2022-06-08'
 tags: ['Web']
 draft: false
-summary: "本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的下半篇，主要包括第18-34关。"
+summary: '本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的下半篇，主要包括第18-34关。'
 ---
 
 简介：
 
 本文是对OverTheWire: Natas服务器端Web安全入门靶场通关的记录中的下半篇，主要包括第18-34关。
-
-
 
 ### Level 18: PHP Session
 
@@ -54,7 +52,7 @@ natas19:4IwIrekcuZlA9OsjOkoUtwU6lhokCPYs
 333230 2d61 646d 696e admin:xxx
 353533 2d61 646d 696e admin:xxx
 353437 2d61 646d 696e admin:xx
-313639 2d			 
+313639 2d
 353831 2d61 646d 696e admin:
 ```
 
@@ -76,23 +74,23 @@ natas20:eofm3Wsshxc5bwtVnEuGIlr7ivb9KABF
 
 关于PHP序列化serialize()函数有三点需要强调：
 
-> The serialize() function converts a storable representation of a value. 
+> The serialize() function converts a storable representation of a value.
 >
-> To serialize data means to convert a value to a sequence of bits, so that it can be stored in a file, a memory buffer, or transmitted across a network. 
+> To serialize data means to convert a value to a sequence of bits, so that it can be stored in a file, a memory buffer, or transmitted across a network.
 >
-> Return: A string that contains a byte-stream representation of *value*.
+> Return: A string that contains a byte-stream representation of _value_.
 
-+ 功能：serialize()函数将PHP中的值转换为可以存储的表示；
-+ 目的：将数据序列化意味着将其转换为字节流，以便其可以被文件、内存缓存存储或者在网络中被传递；
-+ 返回值：serizlize()函数的返回值为保存着输入值字节流表示的**字符串**；
+- 功能：serialize()函数将PHP中的值转换为可以存储的表示；
+- 目的：将数据序列化意味着将其转换为字节流，以便其可以被文件、内存缓存存储或者在网络中被传递；
+- 返回值：serizlize()函数的返回值为保存着输入值字节流表示的**字符串**；
 
 反序列可以理解为PHP序列化的逆操作，将文件、内存缓存或者网络中的字节流字符串还原为PHP中的对象/值。本题中`myread()`函数和`mywrite()`函数即自己实现的反序列化和序列化函数。
 
 ```PHP
-function myread($sid) { 
-    debug("MYREAD $sid"); 
+function myread($sid) {
+    debug("MYREAD $sid");
     if(strspn($sid, "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM-") != strlen($sid)) {
-    debug("Invalid SID"); 
+    debug("Invalid SID");
         return "";
     }
     $filename = session_save_path() . "/" . "mysess_" . $sid;
@@ -111,13 +109,13 @@ function myread($sid) {
     return session_encode();
 }
 
-function mywrite($sid, $data) { 
+function mywrite($sid, $data) {
     // $data contains the serialized version of $_SESSION
     // but our encoding is better
-    debug("MYWRITE $sid $data"); 
+    debug("MYWRITE $sid $data");
     // make sure the sid is alnum only!!
     if(strspn($sid, "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM-") != strlen($sid)) {
-    debug("Invalid SID"); 
+    debug("Invalid SID");
         return;
     }
     $filename = session_save_path() . "/" . "mysess_" . $sid;
@@ -133,7 +131,7 @@ function mywrite($sid, $data) {
 }
 ```
 
-根据上述代码我们发现在从文件中读取序列化的字符串时，使用换行符`\n`用来分隔每个键值对，并使用空格来分隔键和值。因此我们很自然的想到在username中注入`jackfromeast\nadmin 1`来使得反序列化后在session变量中得到$_SESSION['admin']=1.
+根据上述代码我们发现在从文件中读取序列化的字符串时，使用换行符`\n`用来分隔每个键值对，并使用空格来分隔键和值。因此我们很自然的想到在username中注入`jackfromeast\nadmin 1`来使得反序列化后在session变量中得到$\_SESSION['admin']=1.
 
 因此我们需要在请求包的POST请求中构造：`username=jackfromeast%0Aadmin 1`
 
@@ -199,7 +197,7 @@ if(array_key_exists("revelio", $_GET)) {
     }
 }
 ?>
-    
+
 <?
     if(array_key_exists("revelio", $_GET)) {
     print "You are an admin. The credentials for the next level are:<br>";
@@ -232,7 +230,7 @@ natas23:D0vlad33nQF0Hz2EP255TP5wSW9ZsRSE
             echo "<br>Wrong!<br>";
         }
     }
-?> 
+?>
 ```
 
 PHP中的比较运算有如下规则：
@@ -262,7 +260,7 @@ natas24:OsRmXFguozKpTZZ5X14zNO43379LZveg
             echo "<br>Wrong!<br>";
         }
     }
-?> 
+?>
 ```
 
 PHP中的`strcmp($str1, $str2)`函数用于比较两个字符串是否相等。如果两个字符串相等则返回0，若`$str1>$str2`则返回`>0`，反之则返回`<0`。该函数的漏洞存在于如果strcmp函数接受到不为字符串类型的变量，则会报错并返回0。因此我们可以构造passwd为数组绕过。
@@ -293,7 +291,7 @@ function safeinclude($filename){
     }
     // add more checks...
 
-    if (file_exists($filename)) { 
+    if (file_exists($filename)) {
         include($filename);
         return 1;
     }
@@ -319,7 +317,7 @@ function safeinclude($filename){
 function logRequest($message){
     $log="[". date("d.m.Y H::i:s",time()) ."]";
     $log=$log . " " . $_SERVER['HTTP_USER_AGENT'];
-    $log=$log . " \"" . $message ."\"\n"; 
+    $log=$log . " \"" . $message ."\"\n";
     $fd=fopen("/var/www/natas/natas25/logs/natas25_" . session_id() .".log","a");
     fwrite($fd,$log);
     fclose($fd);
@@ -346,15 +344,15 @@ natas26:oGgWAJ7zcGT28vYazGo4rkhOPDhBu34T
 
 首先PHP的类与对象的概念与其他面向对象的语言相似，这里不再赘述。但是PHP的类中一类特殊方法即，魔法方法(magic function)。魔幻方法的名字以双下划线`__`开头，这些方法**在某些特定的条件下会自动被调用**，包括`__construc`、`__destruct`、`__toString`、`__sleep`、`__wakeup`等等这些都是类的魔幻方法。
 
-+ `__construc`: 在创建对象时候初始化对象调用，一般用于对变量赋初值；
-+ `__destruct`：在对象不再被使用时(将所有该对象的引用设为null)或者程序退出时自动调用；
-+ `__toString`：当一个对象用作一个字符串时被自动调用;
-+ `__wakeup`：在反序列化时被调用，预先准备对象需要的资源，例如重新建立数据库连接，或执行其它初始化操作；
-+ `__sleep`：在序列化时被调用，用于清理对象，并返回一个包含对象中所有应被序列化的变量名称的数组。
+- `__construc`: 在创建对象时候初始化对象调用，一般用于对变量赋初值；
+- `__destruct`：在对象不再被使用时(将所有该对象的引用设为null)或者程序退出时自动调用；
+- `__toString`：当一个对象用作一个字符串时被自动调用;
+- `__wakeup`：在反序列化时被调用，预先准备对象需要的资源，例如重新建立数据库连接，或执行其它初始化操作；
+- `__sleep`：在序列化时被调用，用于清理对象，并返回一个包含对象中所有应被序列化的变量名称的数组。
 
 **对象注入漏洞**
 
-在完成序列化和反序列化时，我们已知特定条件下魔术方法会自动被调用。而当**一个序列化后的对象中包含有攻击者控制的对象值时，便可能存在PHP反序列化漏洞。当我们web应用的源代码中发现，一个类中定义了`__wakeup`或`__destruct`方法，并且这些方法进行了一些可能会影响web应用的操作时，对象注入漏洞便可能存在。
+在完成序列化和反序列化时，我们已知特定条件下魔术方法会自动被调用。而当\*\*一个序列化后的对象中包含有攻击者控制的对象值时，便可能存在PHP反序列化漏洞。当我们web应用的源代码中发现，一个类中定义了`__wakeup`或`__destruct`方法，并且这些方法进行了一些可能会影响web应用的操作时，对象注入漏洞便可能存在。
 
 回到题目中我们发现代码中定义了Logger类，如下所示。可见在`__destruct()`中，当对象被销毁(引用为空时)会存在打开文件并写入的操作。因此，如果我们可以控制这三个私有变量，将`$logFile`设置为php文件并写入代码，在访问时即可完成命令注入。
 
@@ -373,20 +371,20 @@ class Logger{
         $fd=fopen($this->logFile,"a+");
         fwrite($fd,$initMsg);
         fclose($fd);
-    }                       
+    }
     function log($msg){
         $fd=fopen($this->logFile,"a+");
         fwrite($fd,$msg."\n");
         fclose($fd);
-    }                       
+    }
     function __destruct(){
         // write exit message
         $fd=fopen($this->logFile,"a+");
         fwrite($fd,$this->exitMsg);
         fclose($fd);
-    }                       
+    }
 }
- 
+
 ```
 
 在后续代码中，我们发现存在对`$cookie`中`drawing`变量的序列化和反序列化。如果我们可以偷天换日般的返回一个精心构造logger对象代替原有的drawing对象，则可以在其第18行重新引用后(此时原Logger对象被销毁，调用destruct函数)访问该log文件即可控制获取下一关的密码。
@@ -432,15 +430,15 @@ natas27:55TBjpPZUUJgVP5b3BnbG6ON9uDPVzCJ
 
 ```PHP
 function dumpData($link,$usr){
-    
+
     $user=mysql_real_escape_string($usr);
-    
+
     $query = "SELECT * from users where username='$user'";
     $res = mysql_query($query, $link);
     if($res) {
         if(mysql_num_rows($res) > 0) {
             while ($row = mysql_fetch_assoc($res)) {
-                // thanks to Gobo for reporting this bug!  
+                // thanks to Gobo for reporting this bug!
                 //return print_r($row);
                 return print_r($row,true);
             }
@@ -542,7 +540,7 @@ natas30:wie9iexae0Daihohv8vuu3cei9wahf0e
 ```Perl
 if ('POST' eq request_method && param('username') && param('password')){
     my $dbh = DBI->connect( "DBI:mysql:natas30","natas30", "<censored>", {'RaiseError' => 1});
-    my $query="Select * FROM users where username =".$dbh->quote(param('username')) . " and password =".$dbh->quote(param('password')); 
+    my $query="Select * FROM users where username =".$dbh->quote(param('username')) . " and password =".$dbh->quote(param('password'));
 
     my $sth = $dbh->prepare($query);
     $sth->execute();
@@ -590,14 +588,14 @@ if ($cgi->upload('file')) {
         if($i==0){ # header
             print "<tr>";
             foreach(@elements){
-                print "<th>".$cgi->escapeHTML($_)."</th>";   
+                print "<th>".$cgi->escapeHTML($_)."</th>";
             }
             print "</tr>";
         }
         else{ # table content
             print "<tr>";
             foreach(@elements){
-                print "<td>".$cgi->escapeHTML($_)."</td>";   
+                print "<td>".$cgi->escapeHTML($_)."</td>";
             }
             print "</tr>";
         }
@@ -615,9 +613,9 @@ if ($cgi->upload('file')) {
 
 perl语言中`<>`运算符可以理解为针对文件的`readline()`函数，但可以处理不同的输入，具体如下所示：
 
-+ 若为文件句柄，尖括号运算符则对该文件句柄进行读取；
-+ 若为搜索模式，尖括号运算符则返回与该模式匹配的文件列表；
-+ 若参数为字符串"ARGV"，则表示从命令行中读取文件名并使用`open()`函数来打开；
+- 若为文件句柄，尖括号运算符则对该文件句柄进行读取；
+- 若为搜索模式，尖括号运算符则返回与该模式匹配的文件列表；
+- 若参数为字符串"ARGV"，则表示从命令行中读取文件名并使用`open()`函数来打开；
 
 以上，我们可以利用这两者的特性，针对运算符`<>`，构造得到经过$cgi->param`函数获取得到的变量为字符串"AVGR"，再将open函数变为exec函数去执行系统命令(参考29关对open函数的讲解)。
 
@@ -639,9 +637,9 @@ natas32:no1vohsheCaiv3ieH4em1ahchisainge
 
 ![32-2](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/32-2.png)
 
-````
+```
 natas33:shoogeiGa2yee3de6Aex8uaXeech5eey
-````
+```
 
 ### Level 33: Phar反序列化漏洞
 
@@ -650,7 +648,7 @@ natas33:shoogeiGa2yee3de6Aex8uaXeech5eey
 ```PHP
 <?php
     class Executor{
-    private $filename=""; 
+    private $filename="";
     private $signature='adeafbadbabec0dedabada55ba55d00d';
     private $init=False;
 
@@ -692,16 +690,16 @@ natas33:shoogeiGa2yee3de6Aex8uaXeech5eey
 
 Phar的文件结构主要包含以下四个部分：
 
-+ stub存根，类似`xxx<?php xxx;__HALT_COMPILER();?>`的php代码，前面内容不限，但必须以`__HALT_COMPILER();?>`来结尾，否则phar扩展将无法识别这个文件为phar文件；
+- stub存根，类似`xxx<?php xxx;__HALT_COMPILER();?>`的php代码，前面内容不限，但必须以`__HALT_COMPILER();?>`来结尾，否则phar扩展将无法识别这个文件为phar文件；
 
-+ Global Phar manifest压缩文件清单；
+- Global Phar manifest压缩文件清单；
 
-    ![33-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/33-1.png)
+  ![33-1](/static/images/Web%E5%AE%89%E5%85%A8%E5%85%A5%E9%97%A8%E9%9D%B6%E5%9C%BANatas%E9%80%9A%E5%85%B3%E8%AF%A6%E8%A7%A3-%E4%B8%8B/33-1.png)
 
-+ file contents文件内容；
-+ phar文件签名(可选)；
+- file contents文件内容；
+- phar文件签名(可选)；
 
- 由上可见，Phar文件中的Meta-data会被序列化保存。正因为如此，我们可以利用其反序列化的过程，完成PHP对象注入。
+由上可见，Phar文件中的Meta-data会被序列化保存。正因为如此，我们可以利用其反序列化的过程，完成PHP对象注入。
 
 **PHP Wrappers**
 
@@ -709,7 +707,7 @@ Phar的文件结构主要包含以下四个部分：
 
 - file:// - Accessing local filesystem
 - http:// - Accessing HTTP(s) URLs
-- ftp:// -  Accessing FTP(s) URLs
+- ftp:// - Accessing FTP(s) URLs
 - php:// - Accessing various I/O streams
 - phar:// - Accessing phar files
 
@@ -719,9 +717,9 @@ Phar的文件结构主要包含以下四个部分：
 
 以上我们可以看到当源码中存在以下三点必要条件，我们即可利用Phar的反序列化漏洞：
 
-+ 源码中存在POP链，即可控输入的函数调用链使得可以利用敏感函数完成文件包含或者命令执行等操作；
-+ 可以上传或访问到本地或者远程的恶意构造的Phar文件；
-+ 源码中存在以Phar流文件作为参数的文件系统函数，作为反序列化漏洞的进入点(entry point)；
+- 源码中存在POP链，即可控输入的函数调用链使得可以利用敏感函数完成文件包含或者命令执行等操作；
+- 可以上传或访问到本地或者远程的恶意构造的Phar文件；
+- 源码中存在以Phar流文件作为参数的文件系统函数，作为反序列化漏洞的进入点(entry point)；
 
 针对本关，我们的攻关步骤如下所示：
 
@@ -729,23 +727,23 @@ Phar的文件结构主要包含以下四个部分：
 
 2. 构造生成phar文件的php代码，并运行生成natas33.phar文件。注意记得在`php.ini`文件中关闭`phar.readonly`选项并重启；
 
-    ```PHP
-     <?php
-         class Executor {
-             private $filename = "pwn.php";
-             private $signature = True;
-             private $init = False;
-         }
-         
-         $phar = new Phar("natas33.phar");
-         $phar->startBuffering();
-         $phar->addFromString("natas33.txt", 'pwn');
-         $phar->setStub("<?php __HALT_COMPILER(); ?>");
-         $o = new Executor();
-         $phar->setMetadata($o);
-         $phar->stopBuffering();
-     ?>
-    ```
+   ```PHP
+    <?php
+        class Executor {
+            private $filename = "pwn.php";
+            private $signature = True;
+            private $init = False;
+        }
+
+        $phar = new Phar("natas33.phar");
+        $phar->startBuffering();
+        $phar->addFromString("natas33.txt", 'pwn');
+        $phar->setStub("<?php __HALT_COMPILER(); ?>");
+        $o = new Executor();
+        $phar->setMetadata($o);
+        $phar->stopBuffering();
+    ?>
+   ```
 
 3. 上传pwn.php和natas33.phar文件到`webroot/natas33/upload`路径，注意更改请求包中的filename；
 

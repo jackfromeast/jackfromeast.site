@@ -1,16 +1,14 @@
 ---
-title: "UACTF 2022 Writeup"
-date: "2022-08-05"
+title: 'UACTF 2022 Writeup'
+date: '2022-08-05'
 tags: ['Writeup']
 draft: false
-summary: "简介：  本文为UACTF 2022比赛的WriteUp。本次还是与NING0121、meishijia一起组队参赛，最终在447支参赛队伍中排名21位。打怪升级中，再接再厉～"
+summary: '简介：  本文为UACTF 2022比赛的WriteUp。本次还是与NING0121、meishijia一起组队参赛，最终在447支参赛队伍中排名21位。打怪升级中，再接再厉～'
 ---
 
 简介：
 
 本文为UACTF 2022比赛的WriteUp。本次还是与NING0121、meishijia一起组队参赛，最终在447支参赛队伍中排名21位。打怪升级中，再接再厉～
-
-
 
 说明：本WriteUp中标志[Aha!]是赛后总结并参考其他师傅的WriteUp完成的，毕竟没有做出来的题更要记录学习。
 
@@ -22,24 +20,24 @@ summary: "简介：  本文为UACTF 2022比赛的WriteUp。本次还是与NING01
 
 题目要求我们达到它所需要我们实现的三个目标，开始并没有思路，没有什么交互按钮，因此就尝试查看 robots.txt，发现存在 secret-source.php 文件。
 
-![img](/static/images/UACTF-2022-WriteUp/SYFwFZuYoVBUlNe4eJ8wdQ.png)        
+![img](/static/images/UACTF-2022-WriteUp/SYFwFZuYoVBUlNe4eJ8wdQ.png)
 
 接着进行访问，阅读逻辑后发现需要实现三个 success 才能够显示出 flag，于是首先尝试直接修改 html 的标签（果然异想天开），接着就需要首先三个条件。
 
 ![1-1-3](/static/images/UACTF-2022-WriteUp/1-1-3.png)
 
 1. 超短 hash
-    要求 ：md5_hash 后 == 0。
-    思考：首先了解 == 的含义，hash_hmac 绕过方式。
-    解决：由于 “==” 只判断值相同，因此我们只需要让 hash_hmac 返回 NULL即可，经查询发现 php 无法处理数组数据，因此只需要让 egg 为数组即可；
+   要求 ：md5_hash 后 == 0。
+   思考：首先了解 == 的含义，hash_hmac 绕过方式。
+   解决：由于 “==” 只判断值相同，因此我们只需要让 hash_hmac 返回 NULL即可，经查询发现 php 无法处理数组数据，因此只需要让 egg 为数组即可；
 2. 长度大于 hash
-    要求：字符串加密长度 < 字符串长度。
-    思考：abs 的接收参数？
-    解决：由于abs为绝对值函数，当输入字符串数据会返回0，进而生成的的 hash 为 “MA==”，长度为4，因此我们只需要赋值一个长于4字符的字符串即可。
+   要求：字符串加密长度 < 字符串长度。
+   思考：abs 的接收参数？
+   解决：由于abs为绝对值函数，当输入字符串数据会返回0，进而生成的的 hash 为 “MA==”，长度为4，因此我们只需要赋值一个长于4字符的字符串即可。
 3. 获得参数但是避免特殊符号
-    要求：既要获得“THROUGH_A_TRAP_LADEN_MAZE”参数，同时不能包含“\_”。
-    思考：开始想着通过二次URL编码绕过，后来发现不行。
-    解决：' . ' 在经过 $_GET 后会变成  ' \_ '。
+   要求：既要获得“THROUGH_A_TRAP_LADEN_MAZE”参数，同时不能包含“\_”。
+   思考：开始想着通过二次URL编码绕过，后来发现不行。
+   解决：' . ' 在经过 $\_GET 后会变成 ' \_ '。
 
 ![1-1-4](/static/images/UACTF-2022-WriteUp/1-1-4.png)
 
@@ -57,11 +55,11 @@ UACTF{17’5_13v1054_n07_13v105444}
 
 使用 burpsuite 拦截并修改数据如下即可。
 
-  ![1-2-2](/static/images/UACTF-2022-WriteUp/1-2-2.png)
+![1-2-2](/static/images/UACTF-2022-WriteUp/1-2-2.png)
 
 页面打印出了 flag。
 
-![img](/static/images/UACTF-2022-WriteUp/RhUs09PxOqfzokWQDGm_zg.png)        
+![img](/static/images/UACTF-2022-WriteUp/RhUs09PxOqfzokWQDGm_zg.png)
 
 ```
 UACTF{jugg1e_this_y0u_fi1thy_casua1}
@@ -81,7 +79,7 @@ https://github.com/milan338/CTF-Writeups/tree/main/UACTF_2022
 
 由于Sussy函数中会对栈的内容进行判断并以此为条件进行跳转，否则会直接exit。所以我们需要将栈以要求的方式填充，再最后将win函数的地址覆盖到栈中的ret位置。最终成功拿到Flag。
 
-![image (20)](/static/images/UACTF-2022-WriteUp/image%20(20).png)
+![image (20)](</static/images/UACTF-2022-WriteUp/image%20(20).png>)
 
 ```
 UACTF{R3T_70_D33Z}
@@ -93,11 +91,11 @@ UACTF{R3T_70_D33Z}
 
 通过反编译软件Ghidra的分析，我们可以看到程序逻辑：首先判断check1()函数的返回值是否为0，若不为0则进入do_stuff函数。其中check1函数和do_stuff函数如下所示。do_stuff函数中打印了puts函数在内存中的地址，并且存在read函数的栈溢出漏洞。所以我们的利用步骤是首先使得check1函数的返回值不为0，再根据打印的puts函数地址以及给出的glibc获取system以及"/bin/sh"字符串在内存中的地址，最后构造ROP链ret2libc获取shell。
 
-![img](/static/images/UACTF-2022-WriteUp/LuaUPWbAGEdOkaVaQg2Ymg.png)        
+![img](/static/images/UACTF-2022-WriteUp/LuaUPWbAGEdOkaVaQg2Ymg.png)
 
 仅通过反汇编的代码我们试图使check1的返回值为0似乎是不可能的，所以我们还需要研究汇编代码。按照函数调用惯例，64位机器编译的程序的返回值优先被置于RAX寄存器中。同时，通过main函数中调用check1函数返回下一条语句，我们也可以看到其对EAX(RAX的低4字节)进行判断是否为0。所以我们需要关注Check1函数中RAX最后值的变化。该函数中，我们通过scanf('%lu', &input)获取一个unsigned long型，接着通过XMM0以及XMM1寄存器的一系列指令对RAX的值进行修改。
 
-![img](/static/images/UACTF-2022-WriteUp/w6zMVJ9M6MTfqBH0RVoIig.png)        
+![img](/static/images/UACTF-2022-WriteUp/w6zMVJ9M6MTfqBH0RVoIig.png)
 
 具体的指令说明如下所示。一个unsigned long型使用8字节表示，最大值为2^64-1，所以我们只需要使得scanf的输入超过此值为NULL即可。
 
@@ -119,9 +117,9 @@ info address system`和`find 0x80048000, 0xc0000000, "/bin/sh"`来查找函数�
 
 然而，在获得system以及"/bin/sh"后构造ROP链，成功在本地kali上获得shell，但是远程总是无法打通。后来查阅到，在部分x86_64机器上，system函数调用会遇到movasp issue。原因是glibc中的库函数会使用到movaps指令，该指令用于数据传输但要求栈结构必须是16字节对齐的(这也是64位机器的函数调用惯例)。但是我们的ROP链的构造是以8字节为单位，所以可能会遇到该问题报错。解决方案是在ROP链中添加额外的ret指令使得栈16字节对齐或者跳过system函数开头的push指令即可。
 
-![img](/static/images/UACTF-2022-WriteUp/gxBQBJeZKthbMtE3oWIpRg.png)        
+![img](/static/images/UACTF-2022-WriteUp/gxBQBJeZKthbMtE3oWIpRg.png)
 
-   ![2-2-1](/static/images/UACTF-2022-WriteUp/2-2-1.png)
+![2-2-1](/static/images/UACTF-2022-WriteUp/2-2-1.png)
 
 完整的Exp如下所示。
 
@@ -225,7 +223,7 @@ sh.interactive()
 
 ### **2-4 Evil Eval [Aha!]**
 
-​                 ![img](/static/images/UACTF-2022-WriteUp/nPRd3TLyFMCDf-S1gkhaCg.jpeg)        
+​ ![img](/static/images/UACTF-2022-WriteUp/nPRd3TLyFMCDf-S1gkhaCg.jpeg)
 
 ## **Reversing**
 
@@ -233,25 +231,25 @@ sh.interactive()
 
 逆向的第一道题，直接使用逆向工具打开即可。
 
-![img](/static/images/UACTF-2022-WriteUp/dnuchhhOzEH1SUkK4IxdTw.png)        
+![img](/static/images/UACTF-2022-WriteUp/dnuchhhOzEH1SUkK4IxdTw.png)
 
-### **3-2 MASON****[Aha!]**
+### **3-2 MASON\*\***[Aha!]\*\*
 
 题目提供了ELF程序，该程序通过读取flag.txt中的字符串，并以该字符串作为种子，产生随机数生成加法公式。思路在于，通过交互程序首先判断字符串的长度并记录随机产生的数字，随后根据这些随机产生的数字，利用程序爆破的方式对原字符串进行还原。
 
 **主函数逻辑**
 
-![](/static/images/UACTF-2022-WriteUp/sdGz0iLYlrDRW3HbY-DLsQ.png)        
+![](/static/images/UACTF-2022-WriteUp/sdGz0iLYlrDRW3HbY-DLsQ.png)
 
 读取flag.txt文件中的字符串
 
-![img](/static/images/UACTF-2022-WriteUp/WI_JGGuyjQESWemayXrc9w.png)        
+![img](/static/images/UACTF-2022-WriteUp/WI_JGGuyjQESWemayXrc9w.png)
 
-![img](/static/images/UACTF-2022-WriteUp/0L_WvOZqD1D1jUi7MfoJaw.png)        
+![img](/static/images/UACTF-2022-WriteUp/0L_WvOZqD1D1jUi7MfoJaw.png)
 
-reseed函数是读取字符串的四个字符，并以他们在内存当中的数据作为随机数产生的种子。__int64 s就是字符串的首地址，DWORD是双字，也就是四个字节，即四个字符。该函数，就相当于以首地址为基址，以4\*i为偏移，大小为四个字节的字符串作为随机数产生的种子。
+reseed函数是读取字符串的四个字符，并以他们在内存当中的数据作为随机数产生的种子。\_\_int64 s就是字符串的首地址，DWORD是双字，也就是四个字节，即四个字符。该函数，就相当于以首地址为基址，以4\*i为偏移，大小为四个字节的字符串作为随机数产生的种子。
 
-![img](/static/images/UACTF-2022-WriteUp/q2ZI1sUX3Ru4eR-ZUn0rWw.png)        
+![img](/static/images/UACTF-2022-WriteUp/q2ZI1sUX3Ru4eR-ZUn0rWw.png)
 
 l1 函数即根据产生的字符串构造随机的加法公式，并计算结果。同时判断后续用户输入的结果是否为正确答案。
 
@@ -369,11 +367,11 @@ for x in range(64):
     print("all add number:" ,num_all_int)
     print("the add result:" + str(result))
     num_1.append(num_all[0])
-    
+
     conn.sendline(str(result))
     print("send the add result......")
     print("after the send:" + str(conn.recvline(keepends=True)))
-    
+
     #conn.recvuntil("Voice")
     #after_recv = str(conn.recvline(keepends=True))
     #print("server send :"+after_recv)
@@ -468,7 +466,7 @@ UACTF{b4d_h4b175_l34d_70_py7h0n2}
 
 起初与 jackfromeast 进行了简单的思考，可能都在想 ord() 函数处理字符串的一个边界问题，但是并未成功，于是暂时搁置了。后面注意到它使用的是 “is” 而不是 “==”，经查询发现，“ is ”：是要求两个对象要相同，即同一个对象（相同id）；“==”：只需要值相同即可；因此改题目是对python整型内存id的考察，同样查询发现python针对整型中的0-256，会统一分配相同的id，而大于256就会独立分配id。因此我们需要做的就是在256的边界进行操作，即输入 n = 256， 字符为Unicode中对应十进制数字为256的字符即可。
 
-![img](/static/images/UACTF-2022-WriteUp/5NmtIwIgvqppomDYyFEWRw.png)        
+![img](/static/images/UACTF-2022-WriteUp/5NmtIwIgvqppomDYyFEWRw.png)
 
 ```
 UACTF{n07_411_5n4k35_423_8u117_3qu41_45_d3m0n572473d_8y_15_4nd_3qu415}
@@ -510,7 +508,7 @@ UACTF{r37urn_0f_7h3_c0l0r_m31573r}
 
 值得一提的是，通过以上帖子得到的字符串没有实义，花费了许多时间。后来我发现流量中包含着键盘中的右箭头、左箭头和回车键，分别对应着0x4f,0x50以及0x28，这些键会改变字符串的输入流，所以需要设置一个字符串的指针(光标)来处理。左箭头和后箭头分别对应着左移和右移，回车对应着光标归零。
 
-![img](/static/images/UACTF-2022-WriteUp/NNLFcy8P3GDyx1lMmoUiYg.png)        
+![img](/static/images/UACTF-2022-WriteUp/NNLFcy8P3GDyx1lMmoUiYg.png)
 
 后半部分为网址，前半部分为网址中应填入的密码。最终获得flag，如下所示。
 
@@ -536,4 +534,3 @@ oggz rip -i 2 infinite.ogg -o stream2.ogg
 ```
 UACTF{t01nf1n1ty4ndb3y0nd}
 ```
-

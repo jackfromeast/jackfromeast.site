@@ -1,14 +1,12 @@
 ---
-title: "西湖论剑 WestLake 2022 babycalc"
-date: "2023-02-02"
+title: '西湖论剑 WestLake 2022 babycalc'
+date: '2023-02-02'
 tags: ['Writeup', 'Pwn']
 draft: false
-summary: "I was delighted to play in the WestLake CTF this year alongside my younger schoolmates and to see their high level of skill despite being only sophomores. Kudos to the younger generation, their future is certainly promising!"
+summary: 'I was delighted to play in the WestLake CTF this year alongside my younger schoolmates and to see their high level of skill despite being only sophomores. Kudos to the younger generation, their future is certainly promising!'
 ---
 
 I was delighted to play in the WestLake CTF this year alongside my younger schoolmates and to see their high level of skill despite being only sophomores. Kudos to the younger generation, their future is certainly promising!
-
-
 
 ### BabyCalc
 
@@ -68,6 +66,7 @@ After we got the numbers that allowed us to return from the current function, we
 Here are actually two vulnerabilities.
 
 From the following two lines, we can find that if we input 0x100 bytes, and last byte of rbp would be overwritten with `0x00`, since the stack size is 0x100, which is called the out-of-bound \x00 overwrite. This will allow us to change the layout of the stack or conduct a stack pivot, for instance, filling the rbp-00 as our fake `rbp` address and following a rop chain on the stack and then ret twice to our fake stack frame.
+
 ```
 sVar1 = read(0,local_108,0x100); # if we input 0x100 bytes
 local_108[(int)sVar1] = '\0'; # then local_108[0x100] = 0x00
@@ -80,7 +79,7 @@ lVar2 = strtol(local_108,(char **)0x0,10);
 local_38[local_c] = (byte)lVar2;
 
 004007ed 48 89 c7        MOV        RDI,RAX
-004007f0 e8 1b fe        CALL       <EXTERNAL>::strtol                               
+004007f0 e8 1b fe        CALL       <EXTERNAL>::strtol
 		ff ff
 004007f5 89 c2           MOV        EDX,EAX
 004007f7 8b 45 fc        MOV        EAX,dword ptr [RBP + local_c]
@@ -99,7 +98,7 @@ That is why we need this arbitrary one-byte write to make the current ret addres
 With the above two vulnerabilities, we could carefully design our stack. However, there are a few constraints that need to bear in mind.
 
 1. the payload size should be `0x100`, so that the rbp's last byte would be overwritten with `0x00`
-2. the `rbp-0x30` and `rbp-0x28` should be `0xa111423746352413` and `0x0318c77665d48332` to bypass the if conditions and successfully return from the function  
+2. the `rbp-0x30` and `rbp-0x28` should be `0xa111423746352413` and `0x0318c77665d48332` to bypass the if conditions and successfully return from the function
 3. using one byte overwrite to overwrite the ret address to `leave, ret`, i.e. write the `0x400c3c` -> `0x400c18`
 4. the fake rbp and rop chain will be placed on the `rbp-00` place
 5. only can return to main instead of vuln function, since we need the second stack pivot attack, rbp should be a valid stack address(use an figure to show)
@@ -132,7 +131,7 @@ payload += b'A' * 0x1C + p32(0x38) # 0x20
 sh.sendline(payload)
 ```
 
-During the stack pivoting, actually, we need the fake rbp value should be a valid stack address so that we can achieve the second stack pivot to finally get a shell. However, since in this case, we aren't able to leak any stack address, we could ret to its parent function and call this vuln function again to obtain a valid rbp address. That's why I return to the main function rather than the vuln function itself. 
+During the stack pivoting, actually, we need the fake rbp value should be a valid stack address so that we can achieve the second stack pivot to finally get a shell. However, since in this case, we aren't able to leak any stack address, we could ret to its parent function and call this vuln function again to obtain a valid rbp address. That's why I return to the main function rather than the vuln function itself.
 
 If we return to the vuln function, after we send the second payload, the new function stack(second time) will look like the following figure which we can see that since the current `rbp` is not a valid address, overwriting its last byte to `0x00` cannot lead us to our fake `rbp`.
 ![bc-2-round-ret2vuln](/static/images/WestLake-%E8%A5%BF%E6%B9%96%E8%AE%BA%E5%89%912022-babycalc/bc-2-round-ret2vuln.png)
@@ -252,4 +251,3 @@ sh.recvuntil(b'good done')
 
 sh.interactive()
 ```
-

