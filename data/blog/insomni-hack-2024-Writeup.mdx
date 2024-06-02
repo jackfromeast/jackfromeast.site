@@ -76,12 +76,9 @@ For other modules in the WebAssembly program, please refer to the [official docu
 There are eight group of instructions:
 
 1. Numeric Instructions
-
-   - i32.const _immediate_ (i64.const, f32.const, f64.const)
-
+   - `i32.const _immediate_ (i64.const, f32.const, f64.const)`
      - push a const immediate value into the stack
-
-     - ```
+        ```
          bytecode:
          ...][ i32.const ][ 123 ][...
 
@@ -93,12 +90,10 @@ There are eight group of instructions:
          |     b     |          |     b     |
          |     a     |          |     a     |
          └───────────┘          └───────────┘
-       ```
+        ```
 
-   - i64.eqz
-
+   - `i64.eqz`
      - pop a operand on the stack and check whether it equals to zero, and return the result to the stack
-
        ```
        bytecode:
        ...][ i64.eqz ][...
@@ -113,8 +108,7 @@ There are eight group of instructions:
        └───────────┘          └───────────┘
        ```
 
-   - i64.lt_s (eq, ne, le, gt, le, ge)
-
+   - `i64.lt_s (eq, ne, le, gt, le, ge)`
      - pop two operands and push the comparison results back to the stack
 
    - etc.
@@ -127,30 +121,30 @@ There are eight group of instructions:
 
 5. Variable Instructions
 
-   - local.get _localidx_
-   - local.set _localidx_
-   - local.tee _localidx_
-   - global.get _globalidx_
-   - global.set _globalidx_
+   - `local.get _localidx_`
+
+   - `local.set _localidx_`
+
+   - `local.tee _localidx_`
+
+   - `global.get _globalidx_`
+   
+   - `global.set _globalidx_`
 
 6. Table Instructions
 
 7. Memory Instructions
 
-   - memory.size
+   - `memory.size`
      - returns the current size of a memory and push to the stack
-   - memory.grow
-
+   
+   - `memory.grow`
      - grows memory by a given delta and returns the previous size
 
-   - load _memarg_
-
+   - `load _memarg_`
      - specify different number types (storage size): i32.load, i64.load, etc.
-
      - pop the first value on the stack as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
-
      - e.g. 80004b4a 28 02 2c i32.load align=0x2 offset=0x2c
-
      - ```
          bytecode:
          ...][ i64.load ][ align ][ offset ][...
@@ -165,12 +159,9 @@ There are eight group of instructions:
          └───────────┘          └───────────┘
        ```
 
-   - store _memarg_
-
+   - `store _memarg_`
      - specify different number types (storage size): i32.store, i64.store, etc.
-
      - pop the first value on the stack as the value to be assigned and the second value as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
-
      - e.g. 80004ae6 36 02 40 i32.store align=0x2 offset=0x40
 
        ```
@@ -189,10 +180,10 @@ There are eight group of instructions:
 
 8. Control Instructions
 
-   - call _functionidx_
+   - `call _functionidx_`
      - consume the necessary arguments from the stack and return the result values of the call to the stack.
      - no pre- or post- prologue to build a stack frame and also no ret address
-   - call_indirect _tableidx_ _typeidx_
+   - `call_indirect _tableidx_ _typeidx_`
      - calls a function indirectly through an operand indexing into a table that is denoted by a table index and must have type _funcref_.
 
 I refer this [documents](https://webassembly.github.io/spec/core/syntax/instructions.html#) for further documents on commonly used instructions. And some of the examples come from this [link](https://juejin.cn/post/6844904069186715656?from=search-suggest).
