@@ -1,1 +1,12 @@
-{"web":9,"writeup":20,"自然语言处理":5,"ai-security":2,"fuzz":2,"qemu环境搭建":1,"固件分析入门":2,"pwn":13,"others":1,"pwncollege":1}
+{
+  "web": 9,
+  "writeup": 20,
+  "自然语言处理": 5,
+  "ai-security": 2,
+  "fuzz": 2,
+  "qemu环境搭建": 1,
+  "固件分析入门": 2,
+  "pwn": 13,
+  "others": 1,
+  "pwncollege": 1
+}

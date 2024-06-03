@@ -12,10 +12,9 @@ import { useEffect } from 'react'
 // Extend the Window interface
 declare global {
   interface Window {
-    themeColor?: string;
+    themeColor?: string
   }
 }
-
 
 const Header = () => {
   useEffect(() => {
@@ -24,48 +23,48 @@ const Header = () => {
      * capture the original color once.
      * Since, the text color is set to gray during the animation, it will be changed
      */
-    const textElement = document.getElementById('headerTitle');
-    const finalText = "jackfromeast's blog";
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    
-    let iterations = 0;
-    let originalColor = '';
-    let delay = 50;
-  
-    if (textElement !== null){
-      if (window.themeColor === undefined ) {
-        window.themeColor = getComputedStyle(textElement).color;
-        originalColor = window.themeColor;
-      }else{
-        originalColor = window.themeColor;
+    const textElement = document.getElementById('headerTitle')
+    const finalText = "jackfromeast's blog"
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+    let iterations = 0
+    let originalColor = ''
+    let delay = 50
+
+    if (textElement !== null) {
+      if (window.themeColor === undefined) {
+        window.themeColor = getComputedStyle(textElement).color
+        originalColor = window.themeColor
+      } else {
+        originalColor = window.themeColor
       }
     }
-  
+
     const animateText = () => {
-      if (textElement === null) return;
-  
+      if (textElement === null) return
+
       if (iterations <= finalText.length) {
-        let currentText = '';
+        let currentText = ''
         for (let i = 0; i < finalText.length; i++) {
           if (i < iterations) {
-            currentText += finalText[i];
+            currentText += finalText[i]
           } else {
-            currentText += characters.charAt(Math.floor(Math.random() * characters.length));
+            currentText += characters.charAt(Math.floor(Math.random() * characters.length))
           }
         }
-        textElement.textContent = currentText;
-        textElement.style.color = 'gray';
-        iterations++;
+        textElement.textContent = currentText
+        textElement.style.color = 'gray'
+        iterations++
         // requestAnimationFrame(animateText); // might be too fast
-        setTimeout(animateText, delay);
+        setTimeout(animateText, delay)
       } else {
-        textElement.textContent = finalText;
-        textElement.style.color = originalColor; // Restore the original color
+        textElement.textContent = finalText
+        textElement.style.color = originalColor // Restore the original color
       }
-    };
-  
-    animateText();
-  }, []);
+    }
+
+    animateText()
+  }, [])
 
   return (
     <header className="flex items-center justify-between py-10">

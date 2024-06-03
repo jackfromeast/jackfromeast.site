@@ -76,24 +76,29 @@ For other modules in the WebAssembly program, please refer to the [official docu
 There are eight group of instructions:
 
 1. Numeric Instructions
-   - `i32.const _immediate_ (i64.const, f32.const, f64.const)`
-     - push a const immediate value into the stack
-        ```
-         bytecode:
-         ...][ i32.const ][ 123 ][...
 
-         stack:
-         |           |          |           |
-         |           |         ➘|  123(i32) |
-         |     d     |          |     d     |
-         |     c     |          |     c     |
-         |     b     |          |     b     |
-         |     a     |          |     a     |
-         └───────────┘          └───────────┘
-        ```
+   - `i32.const _immediate_ (i64.const, f32.const, f64.const)`
+
+     - push a const immediate value into the stack
+
+       ```
+        bytecode:
+        ...][ i32.const ][ 123 ][...
+
+        stack:
+        |           |          |           |
+        |           |         ➘|  123(i32) |
+        |     d     |          |     d     |
+        |     c     |          |     c     |
+        |     b     |          |     b     |
+        |     a     |          |     a     |
+        └───────────┘          └───────────┘
+       ```
 
    - `i64.eqz`
+
      - pop a operand on the stack and check whether it equals to zero, and return the result to the stack
+
        ```
        bytecode:
        ...][ i64.eqz ][...
@@ -109,6 +114,7 @@ There are eight group of instructions:
        ```
 
    - `i64.lt_s (eq, ne, le, gt, le, ge)`
+
      - pop two operands and push the comparison results back to the stack
 
    - etc.
@@ -128,7 +134,6 @@ There are eight group of instructions:
    - `local.tee _localidx_`
 
    - `global.get _globalidx_`
-   
    - `global.set _globalidx_`
 
 6. Table Instructions
@@ -137,11 +142,12 @@ There are eight group of instructions:
 
    - `memory.size`
      - returns the current size of a memory and push to the stack
-   
    - `memory.grow`
+
      - grows memory by a given delta and returns the previous size
 
    - `load _memarg_`
+
      - specify different number types (storage size): i32.load, i64.load, etc.
      - pop the first value on the stack as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
      - e.g. 80004b4a 28 02 2c i32.load align=0x2 offset=0x2c
@@ -160,6 +166,7 @@ There are eight group of instructions:
        ```
 
    - `store _memarg_`
+
      - specify different number types (storage size): i32.store, i64.store, etc.
      - pop the first value on the stack as the value to be assigned and the second value as base address and takes a memory immediate memarg: address _offset_ and the expected _alignment_
      - e.g. 80004ae6 36 02 40 i32.store align=0x2 offset=0x40
