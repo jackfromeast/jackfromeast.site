@@ -15,6 +15,12 @@ const Header = () => {
     const finalText = "jackfromeast's blog"
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     let iterations = 0
+    let originalColor = ''
+
+    if (textElement !== null) {
+      // Capture the original color
+      originalColor = getComputedStyle(textElement).color;
+    }
 
     const animateText = () => {
       if (textElement === null) return
@@ -32,7 +38,7 @@ const Header = () => {
         iterations++
       } else {
         textElement.textContent = finalText
-        textElement.style.color = 'white'
+        textElement.style.color = originalColor
       }
 
       setTimeout(animateText, 70)
