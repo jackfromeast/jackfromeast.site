@@ -29,7 +29,7 @@ const Header = () => {
 
     let iterations = 0
     let originalColor = ''
-    let delay = 50
+    const delay = 50
 
     if (textElement !== null) {
       if (window.themeColor === undefined) {
