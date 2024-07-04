@@ -812,6 +812,7 @@ It showed that the `Origin` header and `HOST` header were inconsistent. After ad
 
 On the webpage, the `pay()` function gives us some hints about what is happening on the server side.
 
+```
     async function pay() {
       // i could not get sqlite to work on the frontend :(
       /*
@@ -825,6 +826,7 @@ On the webpage, the `pay()` function gives us some hints about what is happening
       document.getElementById("alert").innerText = j["message"];
       setTimeout(() => { document.getElementById("alert").classList.remove("opacity-100") }, 5000);
     }
+```
 
 The POST request is sent with a JWT token:
 
