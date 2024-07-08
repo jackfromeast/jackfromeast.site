@@ -6,9 +6,9 @@ draft: false
 summary: " In this year's UIUCTF, they provided an interesting web challenge called Pwnypass, which revealed an intriguing timing-based behavior in the browser during navigation that can be leveraged by attackers. I give it a fancy name: EAR (Execution After Redirect) attack on the client side."
 ---
 
-## UIUCTF 2024 Writeup
+# UIUCTF 2024 Writeup
 
-### Pwnypass
+## Pwnypass
 
 >We're working on a cool password manager extension for SIGPwny members. Can you break it?
 >
@@ -526,7 +526,7 @@ const payload = () => {
 
 ![pwnypass-flag](/static/images/UIUCTF2024/pwnypass-flag.jpg)
 
-### Pwnypass2
+## Pwnypass2
 
 The `pwnypass2` challenge uses the same extension as `pwnypass`. However, in this challenge, the flag is saved in the local filesystem. Although I didn't manage to solve this challenge, I learned a lot from the discussions in the Discord channel. Now, I am going to wrap up and summarize everything here. I will chain all the parts in a backwards manner, from how to read the flag to the first leaking.
 
@@ -718,7 +718,7 @@ Here is the exploit that I chained all the parts together.
 
 
 
-### Log Action
+## Log Action
 
 >I keep trying to log in, but it's not working :'(
 >
@@ -994,7 +994,7 @@ It showed that the `Origin` header and `HOST` header were inconsistent. After ad
 
 ![log-action-3](/static/images/UIUCTF2024/log-action-3.jpg)
 
-### Fare Evasion
+## Fare Evasion
 
 > SIGPwny Transit Authority needs your fares, but the system is acting a tad odd. We'll let you sign your tickets this time!
 >
