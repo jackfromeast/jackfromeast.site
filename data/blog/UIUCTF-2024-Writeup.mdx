@@ -643,7 +643,7 @@ const toHexString = (bytes) =>
 const doHmac = async (d) => toHexString(new Uint8Array(await crypto.subtle.digest('SHA-256', concat(keyArr, s2a(d)))));
 ```
 
-Here we carry out an attack named, `Length Extension Attack`, in cryptography, and its basic idea is that attacker can use `Hash(message1)` and the length of `message1` to calculate `Hash(message1 || message2)` for an attacker-controlled `message2`, without needing to know the content of `message1`, according to the [wiki](https://en.wikipedia.org/wiki/Length_extension_attack). Here is the [tool](https://github.com/viensea1106/hash-length-extension) to achieve this attack.
+Here we carry out an attack named, `Length Extension Attack`, in cryptography, and its basic idea is that attacker can use `Hash(message1)` and the length of `message1` to calculate `Hash(message1 || message2)` for an attacker-controlled `message2`, without needing to know the content of `message1`, according to the [wiki](https://en.wikipedia.org/wiki/Length_extension_attack). Here is the [tool](https://github.com/stephenbradshaw/hlextend) to achieve this attack.
 
 There is another fact that we can take advantage of in the `s2a` function: `Uint8` only keeps the last 8 bits (char from 0 to 255) while the output `letter.charCodeAt(0)` can be much larger. For example, for the letter `∫`, its `charCodeAt(0)` output is 8747. However, the output of `Uint8Array` is `43` because the upper bits have been discarded. This fact allows us to make a hash collision as the char `∫` is treated the same as `C`.
 
