@@ -53,9 +53,6 @@ module.exports = {
             code: {
               color: theme('colors.indigo.500'),
             },
-            body: {
-              zoom: 0.8,
-            }
           },
         },
         invert: {
