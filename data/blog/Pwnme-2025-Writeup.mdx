@@ -53,7 +53,7 @@ The following payload triggers an XSS by leveraging the `oncontentvisibilityaut
 https://hackthebot2-512f165761b6a6e8.deploy.phreaks.fr/?q=%3Cinput%20oncontentvisibilityautostatechange=confirm(1)%20style=content-visibility:auto%20type=hiddle%20%3E
 ```
 
-### Exploit
+### **Exploit**
 
 Constructing an exploit is challenging due to the imposed restrictions. The bot sets the cookie only after visiting the page, preventing direct fetching. We must wait and check periodically if the cookie is set. However, we cannot use `setInterval` or `setTimeout` (due to uppercase characters), nor can we use a busy-wait loop (`while`), as it would block `page.goto` from completing.
 
@@ -200,13 +200,13 @@ Payload to retrieve the env variables:
 prompt = "{0.__globals__[render_template].__globals__[Template].render.__globals__[os].environ._data}"
 ```
 
-### Flag
+### **Flag**
 
 ```python
 PWNME{b492b312612c741b3b6597f925f88198}
 ```
 
-### Additional Note
+### **Additional Note**
 
 According to the challenge author, this challenge is essentially about encoding differentials, as explained in the following article. However, they forgot to escape the `/` lol.
 
@@ -220,7 +220,7 @@ Here is the author’s solve: [https://github.com/Phreaks-2600/PwnMeCTF-2025-qua
 
 I didn’t manage to solve this challenge during the game. I know it’s related to connecting to Chrome via the CDP remote debugging port. However, since the challenge doesn’t explicitly set the port using `--remote-debugging-port`, I wasn’t aware that I could leak it from the browser’s user data folder.
 
-### Vulnerability
+### **Vulnerability**
 
 The setup of this challenge is that you can let the puppeter visit any website. And the browser is started in the following way. You goal is to read a local file under the source code folder.
 
@@ -258,7 +258,7 @@ http {
 
 With this vulnerability, we could read the content under the `browserCachePath` path and remote debugging port is located at `DevToolsActivePort` file.
 
-### Exploitation
+### **Exploitation**
 
 Next, we can interact with DevTools through the CDP protocol using a WebSocket to read the file and exfiltrate its contents.
 
@@ -273,7 +273,7 @@ Here’s the exploitation script from player @**TechnologicNick**:
 >
 > You must take control of the administrator account
 
-### Analyzing the Password Reset Token
+### **Analyzing the Password Reset Token**
 
 The password reset token algorithm appears to be predictable, allowing us to reset the admin’s password. The goal is to understand how the token is generated (which is really hard).
 
@@ -308,7 +308,7 @@ Here are some aspects that can be considered:
     - Replacing certain parts of the token with random characters sometimes returns a `500` error and other times a `404` error.
     - This suggests that only a specific alphabet is used to generate the token.
 
-### Guess the Algorithm
+### **Guess the Algorithm**
 
 Following the alphabet analysis, we can try to construct the used alphabet table.
 
@@ -329,7 +329,7 @@ The alphabet’s length is 32, which means the token could be using the Base32 a
 
 The later part could just following the challenge author’s writeup: [https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/Crackford/solve/README.md#reconstructing-the-encoding-algorithm](https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/Crackford/solve/README.md#reconstructing-the-encoding-algorithm)
 
-### SQLi
+### **SQLi**
 
 Once we find the token generation algorithm, we know the format of the message of being encoded: `email|id|PWNME CTF` .
 
