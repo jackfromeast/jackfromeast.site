@@ -6,8 +6,8 @@ const siteMetadata = {
   description: 'A blog created with Next.js and Tailwind.css',
   language: 'en-us',
   theme: 'dark', // system, dark or light
-  siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
-  siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
+  siteUrl: 'https://jackfromeast.site',
+  siteRepo: 'https://github.com/jackfromeast/jackfromeast.site',
   siteLogo: '/static/images/logo.png',
   socialBanner: '/static/images/twitter-card.png',
   mastodon: 'https://mastodon.social/@mastodonuser',
