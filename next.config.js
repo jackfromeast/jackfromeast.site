@@ -74,18 +74,7 @@ module.exports = () => {
       ],
     },
     async rewrites() {
-      return [
-        {
-          source: '/login',
-          destination: '/exp/zeplin-poc.html',
-          has: [
-            {
-              type: 'host',
-              value: 'app.zeplin.io.jackfromeast.site',
-            },
-          ],
-        },
-      ]
+      return []
     },
     async headers() {
       return [
