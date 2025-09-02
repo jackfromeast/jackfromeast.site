@@ -3,7 +3,14 @@ import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
   const hostname = request.headers.get('host')
-  
+
+  // Serve all the poc subdomain requests
+  if (hostname === 'poc.jackfromeast.site') {
+    if (request.nextUrl.pathname === '/dyad.html') {
+      return NextResponse.rewrite(new URL('/exp/dyad-poc.html', request.url))
+    }
+  }
+
   // Check if the request is for the zeplin subdomain
   if (hostname === 'app.zeplin.io.jackfromeast.site') {
     // Serve the zeplin-poc.html file for any path on this subdomain

