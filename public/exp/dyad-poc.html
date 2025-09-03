@@ -1,6 +1,15 @@
 <html>
 <script>
 void (async () => {
+
+try {
+    await window.electron.ipcRenderer.invoke('set-user-settings', { runtimeMode2: 'host' });
+    const config = await window.electron.ipcRenderer.invoke('get-user-settings');
+    console.log('Current runtime mode:', config.runtimeMode2);
+} catch (e) {
+    console.error('Failed to switch mode:', e);
+}
+
 const { apps, appBasePath } = await window.electron.ipcRenderer.invoke('list-apps');
 if (!apps?.length) throw new Error('No apps found');
 const srcApp = apps.at(-1);
