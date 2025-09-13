@@ -28,7 +28,6 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL('/exp/notejoy-poc.html', request.url))
   }
 
-
   if (hostname === 'trae.jackfromeast.site') {
     // Handle specific paths first
     if (request.nextUrl.pathname === '/ide/auth-callback/desktop') {
