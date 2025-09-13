@@ -28,6 +28,45 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL('/exp/notejoy-poc.html', request.url))
   }
 
+
+  if (hostname === 'trae.jackfromeast.site') {
+    // Handle specific paths first
+    if (request.nextUrl.pathname === '/ide/auth-callback/desktop') {
+      // Serve the poc.html file for this specific path
+      return NextResponse.rewrite(new URL('/exp/trae/poc.html', request.url))
+    }
+    
+    if (request.nextUrl.pathname === '/gg.gzip') {
+      // Serve the gzip file with appropriate headers
+      const response = NextResponse.rewrite(new URL('/exp/trae/gg.gzip', request.url))
+      response.headers.set('Content-Type', 'application/octet-stream')
+      response.headers.set('Content-Encoding', 'gzip')
+      return response
+    }
+    
+    // For any other path on trae subdomain, redirect to /ide/auth-callback/desktop
+    return NextResponse.redirect(new URL('/ide/auth-callback/desktop', request.url))
+  }
+
+  if (hostname === 'trae.cn.jackfromeast.site') {
+    // Handle specific paths first
+    if (request.nextUrl.pathname === '/ide/auth-callback/desktop') {
+      // Serve the poc.html file for this specific path
+      return NextResponse.rewrite(new URL('/exp/trae/poc-cn.html', request.url))
+    }
+    
+    if (request.nextUrl.pathname === '/gg.gzip') {
+      // Serve the gzip file with appropriate headers
+      const response = NextResponse.rewrite(new URL('/exp/trae/gg.gzip', request.url))
+      response.headers.set('Content-Type', 'application/octet-stream')
+      response.headers.set('Content-Encoding', 'gzip')
+      return response
+    }
+    
+    // For any other path on trae subdomain, redirect to /ide/auth-callback/desktop
+    return NextResponse.redirect(new URL('/ide/auth-callback/desktop', request.url))
+  }
+
   // Continue with normal processing for other domains
   return NextResponse.next()
 }
