@@ -1,0 +1,1 @@
+window.pwnd=document.domain
