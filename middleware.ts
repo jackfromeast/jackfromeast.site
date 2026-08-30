@@ -28,6 +28,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL('/exp/notejoy-poc.html', request.url))
   }
 
+  if (hostname === 'www.cisco.com.jackfromeast.site') {
+    // The Cisco bridge accepts any origin containing the unanchored ".cisco.com" substring.
+    return NextResponse.rewrite(new URL('/exp/cisco-poc.html', request.url))
+  }
+
   if (hostname === 'trae.jackfromeast.site') {
     // Handle specific paths first
     if (request.nextUrl.pathname === '/ide/auth-callback/desktop') {

